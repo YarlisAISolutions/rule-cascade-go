@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // read parses one of the JSON files of the conformance suite.

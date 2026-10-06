@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"rules.sdods.com/go/internal/clients"
+	"rulescascade.com/go/internal/clients"
 )
 
 // finding of doctor: ok, warn or fail, with what to do.
@@ -43,9 +43,9 @@ func (c *cli) doctorCommand(args []string) int {
 		latest, err := latestVersion()
 		switch {
 		case err != nil:
-			add("latest version", "warn", "could not reach rules.sdods.com: "+err.Error(), "set RCAS_NO_NETWORK=1 to skip this check offline")
+			add("latest version", "warn", "could not reach rulescascade.com: "+err.Error(), "set RCAS_NO_NETWORK=1 to skip this check offline")
 		case latest != engineVersion() && engineVersion() != "":
-			add("latest version", "warn", "this is "+engineVersion()+"; the latest release is "+latest, "to change, see https://rules.sdods.com/get-started/install/")
+			add("latest version", "warn", "this is "+engineVersion()+"; the latest release is "+latest, "to change, see https://rulescascade.com/get-started/install/")
 		default:
 			add("latest version", "ok", latest, "")
 		}
@@ -56,7 +56,7 @@ func (c *cli) doctorCommand(args []string) int {
 	case errors.Is(err, errNoConfig):
 		add("rcas.yaml", "warn", "no project configuration found", c.program+" init")
 	case err != nil:
-		add("rcas.yaml", "fail", err.Error(), "fix the file; https://rules.sdods.com/reference/project-config/")
+		add("rcas.yaml", "fail", err.Error(), "fix the file; https://rulescascade.com/reference/project-config/")
 	default:
 		add("rcas.yaml", "ok", cfg.Path, "")
 		files := findRulesets(cfg.RulesDir(), cfg.Rules.Include)
@@ -143,7 +143,7 @@ func (c *cli) doctorCommand(args []string) int {
 // latestVersion reads the version the site publishes as latest.
 func latestVersion() (string, error) {
 	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("https://rules.sdods.com/download/latest/VERSION")
+	resp, err := client.Get("https://rulescascade.com/download/latest/VERSION")
 	if err != nil {
 		return "", err
 	}

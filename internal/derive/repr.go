@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // pyRepr writes a value the way Python's repr does, for the messages that quote a value from the

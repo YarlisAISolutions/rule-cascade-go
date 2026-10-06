@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // ------------------------------------------------------------------ values

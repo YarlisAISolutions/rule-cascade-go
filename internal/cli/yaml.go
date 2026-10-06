@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // Reading YAML (specification section 12).

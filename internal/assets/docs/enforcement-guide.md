@@ -266,7 +266,7 @@ lists what is and is not derived, and how to extend the baseline or copy from it
 ### Step 3. Check and compile in CI
 
 Use `rcas`: a single file for Linux, macOS and Windows that needs nothing else
-([install](https://rules.sdods.com/get-started/install/); in CI, `npx -y @rules-cascade/cli`). The
+([install](https://rulescascade.com/get-started/install/); in CI, `npx -y @rules-cascade/cli`). The
 Python reference implementation gives the same results.
 
 1. Check every ruleset. The command lints the YAML, loads the ruleset with its parents, verifies the

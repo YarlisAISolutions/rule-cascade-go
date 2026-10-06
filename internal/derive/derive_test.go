@@ -13,18 +13,18 @@ import (
 	"strings"
 	"testing"
 
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // The repository the parity tests read: examples/ and the conformance suite.
 const repo = "../../../../"
 
 // TestMain runs the tests inside the Rule Cascade repository only: the parity tests read the
-// examples from ../../../../. The public Go mirror (rules.sdods.com/go) holds packages/go alone, so
+// examples from ../../../../. The public Go mirror (rulescascade.com/go) holds packages/go alone, so
 // there `go test ./...` reports that and passes.
 func TestMain(m *testing.M) {
 	if _, err := os.Stat(repo + "conformance/README.md"); err != nil {
-		fmt.Println("rules.sdods.com/go/internal/derive: the tests need the Rule Cascade repository (../../../../conformance); skipped")
+		fmt.Println("rulescascade.com/go/internal/derive: the tests need the Rule Cascade repository (../../../../conformance); skipped")
 		os.Exit(0)
 	}
 	os.Exit(m.Run())

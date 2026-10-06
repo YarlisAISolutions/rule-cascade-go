@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // Options mirror the flags of `rulecheck derive`.

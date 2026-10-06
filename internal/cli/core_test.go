@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 const repository = "../../../.."

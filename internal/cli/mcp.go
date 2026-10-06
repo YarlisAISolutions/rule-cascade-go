@@ -10,11 +10,11 @@ import (
 	"runtime"
 	"strings"
 
-	rulecascade "rules.sdods.com/go"
-	"rules.sdods.com/go/internal/assets"
-	"rules.sdods.com/go/internal/clients"
-	"rules.sdods.com/go/internal/mcp"
-	"rules.sdods.com/go/internal/proposals"
+	rulecascade "rulescascade.com/go"
+	"rulescascade.com/go/internal/assets"
+	"rulescascade.com/go/internal/clients"
+	"rulescascade.com/go/internal/mcp"
+	"rulescascade.com/go/internal/proposals"
 )
 
 const mcpHelp = `Without arguments, serves the Model Context Protocol on standard input and output for an AI

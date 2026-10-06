@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"rules.sdods.com/go/internal/derive"
-	"rules.sdods.com/go/internal/proposals"
+	"rulescascade.com/go/internal/derive"
+	"rulescascade.com/go/internal/proposals"
 )
 
 const deriveHelp = `Builds a validation ruleset from the constraints of a schema: required members, types, enums,
@@ -25,7 +25,7 @@ the difference.
   --check        compare with the file given by -o and fail when it is stale (for CI)
   --propose      store it as a proposal for review instead ('{program} proposals')
   --tests, --codes-from, --scope, --version, --title, --entity: as in the reference tool; see
-  https://rules.sdods.com/reference/openapi/
+  https://rulescascade.com/reference/openapi/
 
 Derived rulesets are generated files: change the schema and derive again; put hand-written rules
 in a ruleset that extends the derived one.

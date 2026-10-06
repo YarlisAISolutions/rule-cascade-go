@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	rulecascade "rules.sdods.com/go"
-	"rules.sdods.com/go/internal/proposals"
+	rulecascade "rulescascade.com/go"
+	"rulescascade.com/go/internal/proposals"
 )
 
 const proposalsHelp = `A proposal is one or more ruleset files that an AI agent (through '{program} mcp') or

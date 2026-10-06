@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://rules.sdods.com/schema/v1/rule-cascade.schema.json",
+  "$id": "https://rulescascade.com/schema/v1/rule-cascade.schema.json",
   "title": "Rule Cascade 1.0 - RuleSet document",
   "description": "Rule Cascade contract: a language-agnostic business rule document. Author it in YAML or JSON. Every object marked extensible accepts x-* fields.",
   "type": "object",

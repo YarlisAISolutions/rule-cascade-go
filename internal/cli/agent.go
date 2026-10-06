@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"rules.sdods.com/go/internal/assets"
+	"rulescascade.com/go/internal/assets"
 )
 
 const agentHelp = `install [--for <tools>] [--print] [--force] [--dry-run]

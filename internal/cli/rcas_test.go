@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"rules.sdods.com/go/internal/proposals"
+	"rulescascade.com/go/internal/proposals"
 )
 
 func newProposal(id string) *proposals.Proposal {

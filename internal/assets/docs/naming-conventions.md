@@ -79,10 +79,10 @@ interface sends it in `view`, and findings return it in `location`.
 | OpenAPI extension | `x-rule-cascade` | on the root and on each operation |
 | npm package | `@rules-cascade/<part>`, in the `rules-cascade` npm scope (not the GitHub organisation's) | `@rules-cascade/core`, `@rules-cascade/server` |
 | npm commands | `rule-cascade-<part>` | `rule-cascade-node`, `rule-cascade-server` |
-| Maven coordinates | `com.sdods.rules:rules-cascade-<part>`, in the `com.sdods` namespace verified on Maven Central by DNS | `com.sdods.rules:rules-cascade-core` |
-| Java package | `com.sdods.rules.cascade` | `com.sdods.rules.cascade.RuleSet` |
+| Maven coordinates | `com.rulescascade:rules-cascade-<part>`, in the `com.rulescascade` namespace, verified on Maven Central by DNS on rulescascade.com | `com.rulescascade:rules-cascade-core` |
+| Java package | `com.rulescascade` | `com.rulescascade.RuleSet` |
 | Python distribution and package | `rcas`, imported as `rule_cascade` | `from rule_cascade import load` |
-| Go module | The vanity path on the documentation domain, served from the public mirror of `packages/go` | `rules.sdods.com/go` |
+| Go module | The vanity path on the documentation domain, served from the public mirror of `packages/go` | `rulescascade.com/go` |
 | Go package | `rulecascade`; the command lives in `cmd/rule-cascade` | `rulecascade.FromBundle` |
 | Command | `rcas`; release files `rule-cascade-<os>-<arch>`, with `.exe` on Windows | `rcas-linux-arm64` |
 | WebAssembly module | `rcas.wasm` | |

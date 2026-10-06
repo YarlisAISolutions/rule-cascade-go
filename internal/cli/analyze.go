@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"rules.sdods.com/go/internal/analyze"
-	"rules.sdods.com/go/internal/proposals"
+	"rulescascade.com/go/internal/analyze"
+	"rulescascade.com/go/internal/proposals"
 )
 
 const analyzeHelp = `Scans a code base for what business rules can be made from:

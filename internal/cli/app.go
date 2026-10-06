@@ -145,7 +145,7 @@ func (c *cli) usageText() string {
 	for _, cmd := range commands {
 		fmt.Fprintf(&b, "  %-11s %s\n", cmd.name, cmd.summary)
 	}
-	fmt.Fprintf(&b, "\nRun '%s help <command>' for its options. Documentation: https://rules.sdods.com/reference/cli/\n", c.program)
+	fmt.Fprintf(&b, "\nRun '%s help <command>' for its options. Documentation: https://rulescascade.com/reference/cli/\n", c.program)
 	fmt.Fprint(&b, "\nRulesets are YAML or JSON. Parents are looked up among the *.ruleset.* files next to the ruleset, and\nentity schemas are resolved relative to it.\n")
 	return b.String()
 }

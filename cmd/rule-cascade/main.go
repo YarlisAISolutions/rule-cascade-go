@@ -1,13 +1,13 @@
 // Command rule-cascade is rcas under its former name, for scripts and pipelines written before the
 // rename. It behaves exactly like rcas.
 //
-//	go install rules.sdods.com/go/cmd/rule-cascade@latest
+//	go install rulescascade.com/go/cmd/rule-cascade@latest
 package main
 
 import (
 	"os"
 
-	"rules.sdods.com/go/internal/cli"
+	"rulescascade.com/go/internal/cli"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".

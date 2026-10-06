@@ -1,4 +1,4 @@
-module rules.sdods.com/go
+module rulescascade.com/go
 
 go 1.22
 

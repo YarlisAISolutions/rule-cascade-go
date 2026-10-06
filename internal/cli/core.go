@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // BuildVersion is set by the command's main package from -ldflags "-X main.version=...".

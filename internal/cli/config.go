@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // ConfigNames are the file names rcas looks for, in this order, in the working directory and each

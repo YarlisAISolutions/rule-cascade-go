@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	rulecascade "rules.sdods.com/go"
+	rulecascade "rulescascade.com/go"
 )
 
 // Client is one AI coding tool rcas can register with.

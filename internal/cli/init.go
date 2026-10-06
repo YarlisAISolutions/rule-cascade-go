@@ -57,8 +57,8 @@ var languages = map[string]language{
 		"if result[\"decision\"] == \"deny\":\n" +
 		"    ...  # return result[\"findings\"] to the caller\n" +
 		"```"},
-	"java": {"Java 17+ (Kotlin, Scala, Spring Boot)", "Maven: com.sdods.rules:rules-cascade-core", "```java\n" +
-		"import com.sdods.rules.cascade.*;\n" +
+	"java": {"Java 17+ (Kotlin, Scala, Spring Boot)", "Maven: com.rulescascade:rules-cascade-core", "```java\n" +
+		"import com.rulescascade.*;\n" +
 		"import java.nio.file.*;\n" +
 		"import java.util.Map;\n\n" +
 		"// Once, at start-up.\n" +
@@ -66,8 +66,8 @@ var languages = map[string]language{
 		"EvaluationResult result = rules.evaluate(\n" +
 		"        EvaluationRequest.builder(\"Order\", \"create\").data(Map.of(\"quantity\", 3)).build(), Channel.SERVER);\n" +
 		"```"},
-	"go": {"Go 1.22+", "go get rules.sdods.com/go", "```go\n" +
-		"import rulecascade \"rules.sdods.com/go\"\n\n" +
+	"go": {"Go 1.22+", "go get rulescascade.com/go", "```go\n" +
+		"import rulecascade \"rulescascade.com/go\"\n\n" +
 		"// Once, at start-up.\n" +
 		"data, err := os.ReadFile(\"{{out}}/{{id}}.bundle.json\")\n" +
 		"doc, err := rulecascade.ParseJSON(data)\n" +
@@ -79,7 +79,7 @@ var languages = map[string]language{
 		"input; it answers with one JSON line. Or evaluate a single request:\n\n" +
 		"```bash\n" +
 		"echo '{\"entity\":\"Order\",\"operation\":\"create\",\"data\":{\"quantity\":3}}' | rcas evaluate --bundle {{out}}/{{id}}.bundle.json -\n" +
-		"```\n\nThe protocol is in https://rules.sdods.com/usage/command-and-wasm/."},
+		"```\n\nThe protocol is in https://rulescascade.com/usage/command-and-wasm/."},
 }
 
 func languageNames() []string {
@@ -300,7 +300,7 @@ func configTemplate(name, prefix string, langs []string) string {
 	if len(langs) > 0 {
 		l = "[" + strings.Join(langs, ", ") + "]"
 	}
-	return fmt.Sprintf(`# rcas project configuration: https://rules.sdods.com/reference/project-config/
+	return fmt.Sprintf(`# rcas project configuration: https://rulescascade.com/reference/project-config/
 rcas: 1
 project:
   name: %s
@@ -346,13 +346,13 @@ func loadingGuide(id string, langs []string) string {
 		fmt.Fprintf(&b, "\n## %s\n\nInstall: `%s`\n\n%s\n", l.title, l.install,
 			strings.NewReplacer("{{out}}", "build/rules", "{{id}}", id).Replace(l.load))
 	}
-	b.WriteString("\nMore: https://rules.sdods.com/learn/languages/\n")
+	b.WriteString("\nMore: https://rulescascade.com/learn/languages/\n")
 	return b.String()
 }
 
 // starterRuleset passes 'rcas check': one validation rule, one warning, and golden tests for both.
 const starterRuleset = `# A first ruleset. Edit it, then run 'rcas check': it lints the file and runs the tests at the end.
-# How to write rules: https://rules.sdods.com/reference/authoring-guidelines/
+# How to write rules: https://rulescascade.com/reference/authoring-guidelines/
 ruleCascade: 1.0.0
 kind: RuleSet
 

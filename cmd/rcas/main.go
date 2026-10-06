@@ -3,15 +3,15 @@
 // Context Protocol for AI coding agents. Installed as rule-cascade too, it behaves the same and
 // calls itself by that name.
 //
-//	go install rules.sdods.com/go/cmd/rcas@latest
+//	go install rulescascade.com/go/cmd/rcas@latest
 //
-// Documentation: https://rules.sdods.com/reference/cli/
+// Documentation: https://rulescascade.com/reference/cli/
 package main
 
 import (
 	"os"
 
-	"rules.sdods.com/go/internal/cli"
+	"rulescascade.com/go/internal/cli"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
