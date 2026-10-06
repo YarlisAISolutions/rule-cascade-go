@@ -1,0 +1,1436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rules.sdods.com/schema/v1/rule-cascade.schema.json",
+  "title": "Rule Cascade 1.0 - RuleSet document",
+  "description": "Rule Cascade contract: a language-agnostic business rule document. Author it in YAML or JSON. Every object marked extensible accepts x-* fields.",
+  "type": "object",
+  "required": [
+    "ruleCascade",
+    "kind",
+    "metadata",
+    "scope",
+    "rules"
+  ],
+  "properties": {
+    "ruleCascade": {
+      "description": "Version of this specification the document conforms to.",
+      "type": "string",
+      "pattern": "^1\\.\\d+\\.\\d+$"
+    },
+    "kind": {
+      "const": "RuleSet"
+    },
+    "metadata": {
+      "$ref": "#/$defs/Metadata"
+    },
+    "scope": {
+      "$ref": "#/$defs/Scope"
+    },
+    "extends": {
+      "description": "Parent ruleset. Rules, params, entities and messages are inherited. Version 1 allows a single parent, so the hierarchy is a chain: enterprise > organization > businessUnit > ... > feature.",
+      "type": "array",
+      "maxItems": 1,
+      "items": {
+        "$ref": "#/$defs/Extends"
+      }
+    },
+    "entities": {
+      "description": "Vocabulary: the business objects rules talk about, bound to a JSON Schema (usually an OpenAPI component schema).",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/Name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Entity"
+      }
+    },
+    "types": {
+      "description": "Semantic data types (money, email, countryCode ...). Fields are bound to a type in entities.<name>.fieldTypes; a rule that targets a type runs once for every field bound to it.",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/Name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/TypeDef"
+      }
+    },
+    "params": {
+      "description": "Named, typed constants that rules read as params.<name>. The main knob child scopes tune.",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/Name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Param"
+      }
+    },
+    "functions": {
+      "description": "Reusable, named expressions with parameters, called as { fn: name, args: [...] }. Portable: they are part of the contract, so every runtime evaluates them identically. Recursion is not allowed.",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/Name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/FunctionDef"
+      }
+    },
+    "operators": {
+      "description": "Custom operators the host application must register in every runtime that evaluates this ruleset. Use them for logic the core operators cannot express. An unregistered operator fails closed at evaluation.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/OperatorDef"
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Rule"
+      }
+    },
+    "overrides": {
+      "$ref": "#/$defs/Overrides"
+    },
+    "conflictPolicy": {
+      "description": "What happens when two state/compute rules set the same field property to different values. 'fail' = evaluation error; 'priority' = highest priority wins, a tie is an evaluation error.",
+      "enum": [
+        "fail",
+        "priority"
+      ],
+      "default": "fail"
+    },
+    "messages": {
+      "description": "Message catalog: locale -> key -> template. Templates use {name} placeholders filled from finding.args.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      }
+    },
+    "defaultLocale": {
+      "type": "string",
+      "default": "en"
+    },
+    "bindings": {
+      "$ref": "#/$defs/Bindings"
+    },
+    "tests": {
+      "description": "Golden tests. Every runtime (Java, TypeScript, Python, ...) must produce exactly these results.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Test"
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-": true
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Name": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "Id": {
+      "description": "Dot-separated, lower-case identifier, e.g. acme.payments.transfer or transfer.amount.positive.",
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9-]|\\.[a-z0-9])*$"
+    },
+    "SemVer": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+    },
+    "Pointer": {
+      "description": "JSON Pointer (RFC 6901) into the entity payload, e.g. /beneficiary/country. Segments are limited to letters, digits, '_' and '-' so a pointer maps one-to-one onto a var path.",
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9_-](?:[A-Za-z0-9_-]|/[A-Za-z0-9_-])*$"
+    },
+    "Extensible": {
+      "patternProperties": {
+        "^x-": true
+      }
+    },
+    "Metadata": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "version": {
+          "$ref": "#/$defs/SemVer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Accountable team or person."
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "active",
+            "deprecated",
+            "retired"
+          ],
+          "default": "draft"
+        },
+        "effective": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "until": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "Scope": {
+      "description": "Where this ruleset sits in the hierarchy, least specific first. Level names are open so the hierarchy can grow; recommended levels: enterprise, organization, businessUnit, agency, project, application, module, feature. Page, screen, section, component, field and data type are addressed per rule in target.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "level",
+          "id"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/$defs/Name"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          }
+        },
+        "patternProperties": {
+          "^x-": true
+        },
+        "additionalProperties": false
+      }
+    },
+    "Extends": {
+      "type": "object",
+      "required": [
+        "ruleset",
+        "version"
+      ],
+      "properties": {
+        "ruleset": {
+          "$ref": "#/$defs/Id"
+        },
+        "version": {
+          "description": "Exact version (1.2.0) or caret range (^1.2.0).",
+          "type": "string",
+          "pattern": "^\\^?\\d+\\.\\d+\\.\\d+$"
+        },
+        "checksum": {
+          "description": "Optional pin: sha256 of the resolved parent.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "Entity": {
+      "type": "object",
+      "required": [
+        "schema"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "schema": {
+          "description": "Reference to the JSON Schema of the entity payload, e.g. ./payments.openapi.yaml#/components/schemas/Transfer.",
+          "type": "object",
+          "required": [
+            "$ref"
+          ],
+          "properties": {
+            "$ref": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "fieldTypes": {
+          "description": "Binds fields to semantic types: JSON Pointer -> type name. A child ruleset may add bindings but may not change an inherited one.",
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/Pointer"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Name"
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "Param": {
+      "type": "object",
+      "required": [
+        "type",
+        "default"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "stringList",
+            "numberList"
+          ]
+        },
+        "default": {},
+        "description": {
+          "type": "string"
+        },
+        "overridePolicy": {
+          "description": "locked = children cannot change it; tighten-only = children may only move it in tightenDirection; open = any value.",
+          "enum": [
+            "locked",
+            "tighten-only",
+            "open"
+          ],
+          "default": "open"
+        },
+        "tightenDirection": {
+          "description": "For tighten-only numeric params: the direction that counts as stricter.",
+          "enum": [
+            "lower",
+            "higher"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "overridePolicy": {
+            "const": "tighten-only"
+          }
+        },
+        "required": [
+          "overridePolicy"
+        ]
+      },
+      "then": {
+        "required": [
+          "tightenDirection"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "number",
+              "integer"
+            ]
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "Expr": {
+      "description": "Expression AST, core profile 1.0. A literal, a variable reference, an operator call or a function call. No implicit type coercion. The pattern argument of 'matches' must be a string literal.",
+      "anyOf": [
+        {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "var"
+          ],
+          "properties": {
+            "var": {
+              "description": "Dot path starting at a root: data (proposed state), original (stored state), actor, ctx, params, item (inside forEach and the collection operators), value and field (inside a rule that targets a type), arg (inside a function body). Missing paths evaluate to null.",
+              "type": "string",
+              "pattern": "^(data|original|actor|ctx|params|item|value|field|arg)(?:\\.[A-Za-z0-9_-](?:[A-Za-z0-9_-]|\\.[A-Za-z0-9_-])*)?$"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "op",
+            "args"
+          ],
+          "properties": {
+            "op": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "and",
+                    "or",
+                    "not",
+                    "eq",
+                    "ne",
+                    "lt",
+                    "lte",
+                    "gt",
+                    "gte",
+                    "between",
+                    "in",
+                    "exists",
+                    "empty",
+                    "coalesce",
+                    "if",
+                    "add",
+                    "sub",
+                    "mul",
+                    "div",
+                    "mod",
+                    "abs",
+                    "min",
+                    "max",
+                    "round",
+                    "len",
+                    "lower",
+                    "upper",
+                    "trim",
+                    "concat",
+                    "substring",
+                    "text",
+                    "matches",
+                    "startsWith",
+                    "endsWith",
+                    "contains",
+                    "list",
+                    "all",
+                    "some",
+                    "none",
+                    "sum",
+                    "map",
+                    "filter",
+                    "typeOf",
+                    "daysBetween",
+                    "yearsBetween"
+                  ]
+                },
+                {
+                  "description": "A custom operator declared under 'operators'.",
+                  "type": "string",
+                  "pattern": "^x-[a-z][a-z0-9-]*$"
+                }
+              ]
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "fn",
+            "args"
+          ],
+          "properties": {
+            "fn": {
+              "description": "A function declared under 'functions'.",
+              "$ref": "#/$defs/Name"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Target": {
+      "description": "What the rule is about. Either an entity, optionally narrowed to a page, screen, section, component and field(s); or a semantic type, in which case the rule runs for every field bound to that type.",
+      "type": "object",
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/Name"
+        },
+        "type": {
+          "description": "Semantic type declared under 'types'. The rule runs once per bound field with 'value' and 'field' in scope.",
+          "$ref": "#/$defs/Name"
+        },
+        "page": {
+          "description": "Logical page id.",
+          "$ref": "#/$defs/Slug"
+        },
+        "screen": {
+          "description": "Logical screen or view id within a page.",
+          "$ref": "#/$defs/Slug"
+        },
+        "section": {
+          "description": "Logical section of a screen (a fieldset, tab, step).",
+          "$ref": "#/$defs/Slug"
+        },
+        "component": {
+          "description": "Logical UI component id (form, panel, grid). Not a framework class name.",
+          "$ref": "#/$defs/Slug"
+        },
+        "field": {
+          "$ref": "#/$defs/Pointer"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pointer"
+          },
+          "minItems": 1
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "entity"
+          ]
+        },
+        {
+          "required": [
+            "type"
+          ]
+        }
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "field",
+              "fields"
+            ]
+          },
+          {
+            "required": [
+              "type",
+              "field"
+            ]
+          },
+          {
+            "required": [
+              "type",
+              "fields"
+            ]
+          }
+        ]
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "Rule": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "target",
+        "operations"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "description": "validation = assert, else finding. state = field-state effects. compute = derived/default values. action = commands after successful persistence. x-* kinds are passed through for custom engines.",
+          "anyOf": [
+            {
+              "enum": [
+                "validation",
+                "state",
+                "compute",
+                "action"
+              ]
+            },
+            {
+              "type": "string",
+              "pattern": "^x-"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Target"
+        },
+        "operations": {
+          "description": "CRUD verbs plus any custom business action (approve, cancel, submit-for-review ...).",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "examples": [
+            [
+              "create",
+              "update"
+            ],
+            [
+              "read"
+            ],
+            [
+              "delete"
+            ],
+            [
+              "approve"
+            ]
+          ]
+        },
+        "triggers": {
+          "description": "Client evaluation moments. The server always evaluates at the operation itself.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "load",
+              "change",
+              "blur",
+              "submit"
+            ]
+          },
+          "default": [
+            "submit"
+          ]
+        },
+        "enforcement": {
+          "description": "client = UI hint only; server = never shipped to clients; both = evaluated in the UI for feedback and again authoritatively on the server.",
+          "enum": [
+            "client",
+            "server",
+            "both"
+          ],
+          "default": "both"
+        },
+        "forEach": {
+          "description": "Evaluate once per element of this array; the element is bound to the 'item' root and target.field is relative to it.",
+          "$ref": "#/$defs/Pointer"
+        },
+        "when": {
+          "description": "Applicability guard. Omitted = always applies.",
+          "$ref": "#/$defs/Expr"
+        },
+        "priority": {
+          "type": "integer",
+          "default": 0
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "overridePolicy": {
+          "description": "What child scopes may do to this rule. locked = nothing; tighten-only = raise severity only; open = change severity, acceptance, enabled.",
+          "enum": [
+            "locked",
+            "tighten-only",
+            "open"
+          ],
+          "default": "tighten-only"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "assert": {
+          "description": "validation: must evaluate to true, otherwise the finding is raised.",
+          "$ref": "#/$defs/Expr"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "finding": {
+          "$ref": "#/$defs/FindingSpec"
+        },
+        "acknowledgement": {
+          "description": "validation, warning only: 'required' blocks the operation until the user acknowledges the warning.",
+          "enum": [
+            "none",
+            "required"
+          ],
+          "default": "none"
+        },
+        "acceptance": {
+          "$ref": "#/$defs/Acceptance"
+        },
+        "effects": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/StateEffect"
+          }
+        },
+        "assign": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          }
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Command"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "validation"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "assert",
+              "severity",
+              "finding"
+            ],
+            "properties": {
+              "effects": false,
+              "assign": false,
+              "commands": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "state"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "when",
+              "effects"
+            ],
+            "properties": {
+              "assert": false,
+              "severity": false,
+              "finding": false,
+              "acceptance": false,
+              "acknowledgement": false,
+              "assign": false,
+              "commands": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "compute"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "assign"
+            ],
+            "properties": {
+              "assert": false,
+              "severity": false,
+              "finding": false,
+              "acceptance": false,
+              "acknowledgement": false,
+              "effects": false,
+              "commands": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "action"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "commands",
+              "enforcement"
+            ],
+            "properties": {
+              "enforcement": {
+                "const": "server"
+              },
+              "assert": false,
+              "severity": false,
+              "finding": false,
+              "acceptance": false,
+              "acknowledgement": false,
+              "effects": false,
+              "assign": false,
+              "forEach": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "acceptance"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "error"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "acknowledgement": {
+                "const": "required"
+              }
+            },
+            "required": [
+              "acknowledgement"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "warning"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "required": [
+              "target"
+            ]
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "const": "validation"
+              },
+              "forEach": false
+            }
+          }
+        }
+      ],
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "FindingSpec": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "description": "Stable, unique finding code for APIs, logs and support.",
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9]*-[A-Z0-9](?:[A-Z0-9]|-[A-Z0-9])*$"
+        },
+        "message": {
+          "description": "Key into the message catalog.",
+          "type": "string"
+        },
+        "args": {
+          "description": "Values for {placeholders} in the message template.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Expr"
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "Acceptance": {
+      "description": "Accept-with-risk: an error finding that an authorised actor may consciously accept. Accepted findings stop blocking and are reported with status 'accepted' for audit.",
+      "type": "object",
+      "required": [
+        "allowed"
+      ],
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "roles": {
+          "description": "Actor needs at least one of these roles. Empty or omitted = any actor.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "justification": {
+          "enum": [
+            "none",
+            "required"
+          ],
+          "default": "required"
+        },
+        "expiresAfter": {
+          "description": "ISO 8601 duration the acceptance stays valid, e.g. P30D or PT12H. Years, months, days, then hours, minutes, seconds; at least one component.",
+          "type": "string",
+          "pattern": "^P(?:(?:\\d+Y(?:\\d+M)?(?:\\d+D)?|\\d+M(?:\\d+D)?|\\d+D)(?:T(?:\\d+H(?:\\d+M)?(?:\\d+S)?|\\d+M(?:\\d+S)?|\\d+S))?|T(?:\\d+H(?:\\d+M)?(?:\\d+S)?|\\d+M(?:\\d+S)?|\\d+S))$"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "StateEffect": {
+      "description": "Applied while the rule's 'when' is true. When it is false the field keeps its default state.",
+      "type": "object",
+      "required": [
+        "field",
+        "set"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/Pointer"
+        },
+        "set": {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "visible": {
+              "type": "boolean"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "readOnly": {
+              "type": "boolean"
+            }
+          },
+          "patternProperties": {
+            "^x-": true
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "Assignment": {
+      "type": "object",
+      "required": [
+        "field",
+        "value"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/Pointer"
+        },
+        "value": {
+          "$ref": "#/$defs/Expr"
+        },
+        "mode": {
+          "description": "default = only when the field is null/absent; always = overwrite.",
+          "enum": [
+            "default",
+            "always"
+          ],
+          "default": "default"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Command": {
+      "description": "A side effect requested after the operation was validated and persisted. The engine only returns commands; the host application executes them.",
+      "type": "object",
+      "required": [
+        "name",
+        "type",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z](?:[a-z0-9-]|\\.[a-z0-9-])*$"
+        },
+        "type": {
+          "enum": [
+            "event",
+            "operation"
+          ]
+        },
+        "ref": {
+          "description": "Event type or OpenAPI operationId to invoke.",
+          "type": "string"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Expr"
+          }
+        },
+        "idempotencyKey": {
+          "description": "Parts joined with ':' into a deterministic key so retries never double-fire.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Expr"
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "Overrides": {
+      "description": "Changes a child scope applies to what it inherited. Checked against each parent's overridePolicy at load time.",
+      "type": "object",
+      "properties": {
+        "params": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/Name"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rule",
+              "set",
+              "reason"
+            ],
+            "properties": {
+              "rule": {
+                "$ref": "#/$defs/Id"
+              },
+              "set": {
+                "type": "object",
+                "minProperties": 1,
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "info",
+                      "warning",
+                      "error"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "acknowledgement": {
+                    "enum": [
+                      "none",
+                      "required"
+                    ]
+                  },
+                  "acceptance": {
+                    "$ref": "#/$defs/Acceptance"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Bindings": {
+      "type": "object",
+      "properties": {
+        "openapi": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "document",
+              "entity",
+              "operations"
+            ],
+            "properties": {
+              "document": {
+                "description": "Path or URL of the OpenAPI description.",
+                "type": "string"
+              },
+              "entity": {
+                "$ref": "#/$defs/Name"
+              },
+              "operations": {
+                "description": "Rule operation -> OpenAPI operationId.",
+                "type": "object",
+                "propertyNames": {
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "patternProperties": {
+              "^x-": true
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "Test": {
+      "type": "object",
+      "required": [
+        "name",
+        "entity",
+        "operation",
+        "given",
+        "expect"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "entity": {
+          "$ref": "#/$defs/Name"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "channel": {
+          "enum": [
+            "client",
+            "server"
+          ],
+          "default": "server"
+        },
+        "given": {
+          "type": "object",
+          "required": [
+            "data"
+          ],
+          "properties": {
+            "data": {
+              "type": "object"
+            },
+            "original": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "actor": {
+              "type": "object"
+            },
+            "ctx": {
+              "type": "object"
+            },
+            "resolutions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Resolution"
+              }
+            },
+            "locale": {
+              "type": "string"
+            },
+            "trigger": {
+              "enum": [
+                "load",
+                "change",
+                "blur",
+                "submit"
+              ]
+            },
+            "view": {
+              "$ref": "#/$defs/View"
+            }
+          },
+          "additionalProperties": false
+        },
+        "expect": {
+          "type": "object",
+          "required": [
+            "decision",
+            "findings"
+          ],
+          "properties": {
+            "decision": {
+              "enum": [
+                "allow",
+                "deny"
+              ]
+            },
+            "findings": {
+              "description": "The complete set of findings expected, in any order.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "rule"
+                ],
+                "properties": {
+                  "rule": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "open",
+                      "acknowledged",
+                      "accepted"
+                    ]
+                  },
+                  "blocking": {
+                    "type": "boolean"
+                  },
+                  "fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "message": {
+                    "type": "string",
+                    "description": "Exact rendered message in the default locale."
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "info",
+                      "warning",
+                      "error"
+                    ]
+                  },
+                  "location": {
+                    "$ref": "#/$defs/View"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "effects": {
+              "description": "Effects that must be present (subset match).",
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "commands": {
+              "description": "Exact list of command names expected.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "Resolution": {
+      "description": "A user's response to a finding, sent back with the next evaluation.",
+      "type": "object",
+      "required": [
+        "rule",
+        "type"
+      ],
+      "properties": {
+        "rule": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "acknowledge",
+            "accept-risk"
+          ]
+        },
+        "justification": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Lower-case kebab-case identifier."
+    },
+    "TypeDef": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "base": {
+          "description": "The JSON type values of this semantic type have. Documentation for authors and tools.",
+          "enum": [
+            "string",
+            "number",
+            "integer",
+            "boolean",
+            "array",
+            "object"
+          ]
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "FunctionDef": {
+      "type": "object",
+      "required": [
+        "params",
+        "body"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "params": {
+          "description": "Parameter names, read inside the body as arg.<name>.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Name"
+          }
+        },
+        "body": {
+          "$ref": "#/$defs/Expr"
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "OperatorDef": {
+      "type": "object",
+      "required": [
+        "description"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "args": {
+          "description": "Number of arguments, for documentation.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "patternProperties": {
+        "^x-": true
+      },
+      "additionalProperties": false
+    },
+    "View": {
+      "description": "A place in the UI. In a request it narrows evaluation to rules for that place: a rule is skipped when it names a different page, screen, section or component. Rules that do not name one always apply.",
+      "type": "object",
+      "properties": {
+        "page": {
+          "$ref": "#/$defs/Slug"
+        },
+        "screen": {
+          "$ref": "#/$defs/Slug"
+        },
+        "section": {
+          "$ref": "#/$defs/Slug"
+        },
+        "component": {
+          "$ref": "#/$defs/Slug"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

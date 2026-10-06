@@ -1,0 +1,7 @@
+---
+description: Business rules are Rule Cascade rulesets; how to find, write, test and propose them with rcas
+globs: ["**/*.ruleset.yaml", "**/*.ruleset.json", "rcas.yaml"]
+alwaysApply: false
+---
+
+{{playbook}}
