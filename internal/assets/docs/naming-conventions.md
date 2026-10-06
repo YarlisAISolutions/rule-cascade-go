@@ -79,8 +79,8 @@ interface sends it in `view`, and findings return it in `location`.
 | OpenAPI extension | `x-rule-cascade` | on the root and on each operation |
 | npm package | `@rules-cascade/<part>`, in the `rules-cascade` npm scope (not the GitHub organisation's) | `@rules-cascade/core`, `@rules-cascade/server` |
 | npm commands | `rule-cascade-<part>` | `rule-cascade-node`, `rule-cascade-server` |
-| Maven coordinates | `io.github.<github-org>:rule-cascade-<part>` | `io.github.yarlisaisolutions:rule-cascade-core` |
-| Java package | `io.github.<github-org>.rulecascade` | |
+| Maven coordinates | `com.sdods.rules:rules-cascade-<part>`, in the `com.sdods` namespace verified on Maven Central by DNS | `com.sdods.rules:rules-cascade-core` |
+| Java package | `com.sdods.rules.cascade` | `com.sdods.rules.cascade.RuleSet` |
 | Python distribution and package | `rcas`, imported as `rule_cascade` | `from rule_cascade import load` |
 | Go module | The vanity path on the documentation domain, served from the public mirror of `packages/go` | `rules.sdods.com/go` |
 | Go package | `rulecascade`; the command lives in `cmd/rule-cascade` | `rulecascade.FromBundle` |

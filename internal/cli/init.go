@@ -57,8 +57,8 @@ var languages = map[string]language{
 		"if result[\"decision\"] == \"deny\":\n" +
 		"    ...  # return result[\"findings\"] to the caller\n" +
 		"```"},
-	"java": {"Java 17+ (Kotlin, Scala, Spring Boot)", "Maven: io.github.yarlisaisolutions:rule-cascade-core", "```java\n" +
-		"import io.github.yarlisaisolutions.rulecascade.*;\n" +
+	"java": {"Java 17+ (Kotlin, Scala, Spring Boot)", "Maven: com.sdods.rules:rules-cascade-core", "```java\n" +
+		"import com.sdods.rules.cascade.*;\n" +
 		"import java.nio.file.*;\n" +
 		"import java.util.Map;\n\n" +
 		"// Once, at start-up.\n" +
