@@ -1,7 +1,7 @@
 package rulecascade
 
 // Version is the version of this runtime.
-const Version = "1.0.0-alpha.4"
+const Version = "1.0.0-alpha.5"
 
 // SpecVersion is the version of the Rule Cascade specification this runtime implements, and
 // BundleVersion the version of the bundle format it writes.
