@@ -107,7 +107,7 @@ func (c *cli) doctorCommand(args []string) int {
 		}
 	}
 	if found == 0 {
-		add("MCP", "warn", "no AI tool is configured to use the rules-cascade MCP server", c.program+" mcp install claude (or codex, cursor, windsurf, gemini, vscode)")
+		add("MCP", "warn", "no AI tool is configured to use the rules-cascade MCP server", c.program+" mcp install <tool> ('"+c.program+" help mcp' lists them)")
 	}
 	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); err == nil {
 		data, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
@@ -118,6 +118,26 @@ func (c *cli) doctorCommand(args []string) int {
 		}
 	} else {
 		add("agent instructions", "warn", "no AGENTS.md", c.program+" agent install")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".agents", "skills", "rules-cascade", "SKILL.md")); err != nil {
+		add("agent skills", "warn", "no .agents/skills/rules-cascade", c.program+" agent install")
+	}
+	// Each tool the project uses should have its own files too (Claude Code and Kiro read skills only
+	// from their own folders, Gemini CLI does not read AGENTS.md).
+	portable := map[string]bool{}
+	for _, f := range c.agentFiles(root, nil, nil).files {
+		portable[f.Path] = true
+	}
+	for _, tool := range detectAgentTools(root) {
+		var missing []string
+		for _, f := range c.agentFiles(root, []string{tool}, nil).files {
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(f.Path))); err != nil && !portable[f.Path] {
+				missing = append(missing, summaryPath(f.Path))
+			}
+		}
+		if len(missing) > 0 {
+			add("agent: "+tool, "warn", "missing "+strings.Join(dedupe(missing), ", "), c.program+" agent install --for "+tool)
+		}
 	}
 
 	status := exitOK

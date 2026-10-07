@@ -100,38 +100,102 @@ func TestConfigIsFoundUpwardsAndValidated(t *testing.T) {
 	}
 }
 
-// agent install writes managed blocks into existing files without touching the rest, and is
-// idempotent.
+// agent install writes managed blocks into existing files without touching the rest, writes the
+// portable files plus each tool's own, and is idempotent.
 func TestAgentInstall(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Our agents\n\nKeep this.\n"), 0o644)
-	if status, out, errs := in(t, dir, "", "agent", "install"); status != 0 {
+	if status, out, errs := in(t, dir, "", "agent", "install", "--for", "all"); status != 0 {
 		t.Fatalf("%d %s %s", status, out, errs)
 	}
 	agents := readFile(t, filepath.Join(dir, "AGENTS.md"))
 	if !strings.HasPrefix(agents, "# Our agents\n\nKeep this.\n") || !strings.Contains(agents, blockBegin) || strings.Count(agents, blockBegin) != 1 {
 		t.Errorf("AGENTS.md:\n%s", agents)
 	}
-	for _, f := range []string{"CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md", ".cursor/rules/rules-cascade.mdc",
-		".claude/agents/rcas-author.md", ".claude/skills/rules-cascade/SKILL.md", ".agents/skills/rules-cascade/SKILL.md"} {
+	for _, f := range []string{"CLAUDE.md", "GEMINI.md", ".agents/skills/rules-cascade/SKILL.md", ".agents/skills/rules-cascade-go/SKILL.md",
+		".claude/skills/rules-cascade-review/SKILL.md", ".claude/agents/rcas-author.md", ".codex/agents/rcas-author.toml",
+		".github/instructions/rules-cascade.instructions.md", ".cursor/rules/rules-cascade.mdc", ".kiro/steering/rules-cascade.md",
+		".kiro/skills/rules-cascade/SKILL.md", ".devin/rules/rules-cascade.md", ".junie/agents/rcas-tester.md", ".clinerules/rules-cascade.md",
+		".opencode/agents/rcas-reviewer.md", ".factory/droids/rcas-analyst.md", ".amazonq/rules/rules-cascade.md", ".tabnine/guidelines/rules-cascade.md"} {
 		data := readFile(t, filepath.Join(dir, filepath.FromSlash(f)))
 		if strings.Contains(data, "{{") {
 			t.Errorf("%s has an unfilled placeholder", f)
+		}
+		if f != "CLAUDE.md" && f != "GEMINI.md" && !strings.Contains(data, managedMarker) {
+			t.Errorf("%s has no %s line", f, managedMarker)
+		}
+	}
+	// with Claude Code chosen, Copilot and Cursor read its sub-agents instead of their own copies
+	for _, f := range []string{".github/agents/rcas-author.agent.md", ".cursor/agents/rcas-author.md", ".cline/skills/rules-cascade/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f))); err == nil {
+			t.Errorf("%s written although .claude/ covers it", f)
 		}
 	}
 	if !strings.Contains(readFile(t, filepath.Join(dir, "CLAUDE.md")), "@AGENTS.md") {
 		t.Error("CLAUDE.md does not import AGENTS.md")
 	}
+	skill := readFile(t, filepath.Join(dir, ".agents", "skills", "rules-cascade-typescript", "SKILL.md"))
+	if !strings.HasPrefix(skill, "---\nname: rules-cascade-typescript\ndescription: ") {
+		t.Errorf("a skill must start with its frontmatter:\n%.200s", skill)
+	}
 	// again: nothing changes
-	_, out, _ := in(t, dir, "", "agent", "install")
+	_, out, _ := in(t, dir, "", "agent", "install", "--for", "all")
 	if strings.Contains(out, "created") || strings.Contains(out, "updated") {
 		t.Errorf("a second install changed files:\n%s", out)
 	}
 	if strings.Count(readFile(t, filepath.Join(dir, "AGENTS.md")), blockBegin) != 1 {
 		t.Error("a second install added a second block")
 	}
+	// a managed file is refreshed; one whose marker line was deleted is kept
+	skillPath := filepath.Join(dir, ".agents", "skills", "rules-cascade", "SKILL.md")
+	os.WriteFile(skillPath, []byte(readFile(t, skillPath)+"\nlocal note\n"), 0o644)
+	edited := filepath.Join(dir, ".agents", "skills", "rules-cascade-review", "SKILL.md")
+	os.WriteFile(edited, []byte(strings.Replace(readFile(t, edited), managedLine+"\n", "", 1)+"\nour checklist\n"), 0o644)
+	in(t, dir, "", "agent", "install", "--for", "claude")
+	if strings.Contains(readFile(t, skillPath), "local note") {
+		t.Error("a managed skill was not refreshed")
+	}
+	if !strings.Contains(readFile(t, edited), "our checklist") {
+		t.Error("a skill without the marker was overwritten")
+	}
 	if status, _, _ := in(t, dir, "", "agent", "install", "--for", "emacs"); status != 2 {
 		t.Error("an unknown tool was accepted")
+	}
+	if status, _, _ := in(t, dir, "", "agent", "install", "--for", "windsurf"); status != 0 {
+		t.Error("the alias windsurf (devin) was refused")
+	}
+}
+
+// Without --for, agent install writes for the tools the project shows signs of, and the skills of
+// the languages it finds.
+func TestAgentInstallDetects(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".kiro"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "api"), 0o755)
+	os.WriteFile(filepath.Join(dir, "api", "go.mod"), []byte("module x\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0o644)
+	if status, out, errs := in(t, dir, "", "agent", "install"); status != 0 {
+		t.Fatalf("%d %s %s", status, out, errs)
+	}
+	for _, f := range []string{".kiro/steering/rules-cascade.md", ".kiro/skills/rules-cascade-go/SKILL.md", ".agents/skills/rules-cascade-typescript/SKILL.md"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f))); err != nil {
+			t.Errorf("%s missing", f)
+		}
+	}
+	for _, f := range []string{"CLAUDE.md", ".agents/skills/rules-cascade-java", ".cursor"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f))); err == nil {
+			t.Errorf("%s written for a tool or language the project does not use", f)
+		}
+	}
+	if !strings.Contains(readFile(t, filepath.Join(dir, "AGENTS.md")), "`rules-cascade-go`") {
+		t.Error("AGENTS.md does not list the Go skill")
+	}
+	_, out, _ := in(t, dir, "", "agent", "list")
+	if !strings.Contains(out, "kiro") || !strings.Contains(out, "Languages found: go, ts") {
+		t.Errorf("agent list:\n%s", out)
+	}
+	if status, _, _ := in(t, dir, "", "agent", "install", "--stack", "cobol"); status != 2 {
+		t.Error("an unknown language was accepted")
 	}
 }
 
@@ -504,5 +568,65 @@ func TestMCPReadsNoSchemaOutsideTheProject(t *testing.T) {
 	_, out, _ := in(t, dir, string(msg)+"\n", "mcp", "--root", dir)
 	if !strings.Contains(out, "SCHEMA_REF_UNRESOLVED") {
 		t.Errorf("a schema outside the project was read: %.300s", out)
+	}
+}
+
+// Each client gets the entry shape its tool expects.
+func TestMCPInstallShapes(t *testing.T) {
+	dir, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if status, out, errs := in(t, dir, "", "mcp", "install", "opencode", "kiro", "muse", "--file"); status != 0 {
+		t.Fatalf("%d %s %s", status, out, errs)
+	}
+	var opencode map[string]any
+	json.Unmarshal([]byte(readFile(t, filepath.Join(dir, "opencode.json"))), &opencode)
+	entry := opencode["mcp"].(map[string]any)["rules-cascade"].(map[string]any)
+	command := entry["command"].([]any) // npx -y @rules-cascade/cli mcp, after cmd /c on Windows
+	if entry["type"] != "local" || command[len(command)-1] != "mcp" || len(command) < 4 || entry["enabled"] != true {
+		t.Errorf("opencode: %v", opencode)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(dir, ".kiro", "settings", "mcp.json")), `"mcpServers"`) {
+		t.Error("kiro has no mcpServers")
+	}
+	var muse map[string]any
+	json.Unmarshal([]byte(readFile(t, filepath.Join(home, ".config", "muse", "settings.json"))), &muse)
+	if muse["schema_version"] != float64(1) || muse["mcp_servers"].(map[string]any)["rules-cascade"].(map[string]any)["transport"] != "stdio" {
+		t.Errorf("muse: %v", muse)
+	}
+}
+
+// Upgrading from rcas 1.0.0-alpha.5 or alpha.6: files they wrote and nobody edited are refreshed,
+// edited ones are kept, and the old Copilot block shrinks to a pointer.
+func TestAgentInstallUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	fill := strings.NewReplacer("{{rules}}", "rules", "{{out}}", "build/rules").Replace
+	for path, content := range legacyOutputs(fill) {
+		full := filepath.Join(dir, filepath.FromSlash(path))
+		os.MkdirAll(filepath.Dir(full), 0o755)
+		old := strings.ReplaceAll(content, "rulescascade.com", "rules.sdods.com") // as alpha.5 wrote it
+		if path == ".claude/agents/rcas-tester.md" {
+			old += "\nOur own step.\n"
+		}
+		os.WriteFile(full, []byte(old), 0o644)
+	}
+	oldBlock, _ := upsertBlock(nil, "Copilot instructions", "the whole playbook\n")
+	os.MkdirAll(filepath.Join(dir, ".github"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".github", "copilot-instructions.md"), oldBlock, 0o644)
+
+	if status, out, errs := in(t, dir, "", "agent", "install", "--for", "claude,cursor,copilot"); status != 0 {
+		t.Fatalf("%d %s %s", status, out, errs)
+	}
+	for _, f := range []string{".agents/skills/rules-cascade/SKILL.md", ".claude/skills/rules-cascade/SKILL.md", ".cursor/rules/rules-cascade.mdc", ".claude/agents/rcas-author.md"} {
+		if data := readFile(t, filepath.Join(dir, filepath.FromSlash(f))); !strings.Contains(data, managedMarker) || strings.Contains(data, "rules.sdods.com") {
+			t.Errorf("%s was not refreshed:\n%.300s", f, data)
+		}
+	}
+	if data := readFile(t, filepath.Join(dir, ".claude", "agents", "rcas-tester.md")); !strings.Contains(data, "Our own step.") {
+		t.Error("an edited file from an earlier rcas was overwritten")
+	}
+	copilot := readFile(t, filepath.Join(dir, ".github", "copilot-instructions.md"))
+	if strings.Contains(copilot, "the whole playbook") || !strings.Contains(copilot, "AGENTS.md") {
+		t.Errorf("the old Copilot block was not replaced:\n%s", copilot)
 	}
 }

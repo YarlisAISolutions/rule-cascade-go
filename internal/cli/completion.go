@@ -19,7 +19,7 @@ func (c *cli) completionCommand(args []string) int {
 	fn := strings.ReplaceAll(p, "-", "_")
 	sub := map[string]string{
 		"mcp":       "install --root --read-only --list-tools " + strings.Join(clientNames(), " ") + " all --scope --print --file --command --name --force",
-		"agent":     "install --for " + strings.Join(agentTools, " ") + " all --print --force --dry-run",
+		"agent":     "install list --for " + strings.Join(agentToolNames(), " ") + " all --stack ts python java go other --print --force --dry-run",
 		"proposals": "list show accept reject --status --json --diff --force --reason",
 		"init":      "--name --id-prefix --lang --from --agent --mcp --ci --force --dry-run",
 		"compile":   "--all -o --output",

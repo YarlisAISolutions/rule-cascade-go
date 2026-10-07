@@ -1,6 +1,6 @@
 # Rule Cascade 1.0 Specification
 
-Status: draft (`1.0.0-alpha.6`). The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
+Status: draft (`1.0.0-alpha.7`). The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
 This document defines the behaviour every runtime must reproduce, in every programming language and
 on every operating system. The structure of a ruleset document is defined by

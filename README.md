@@ -251,6 +251,24 @@ result, err := rules.Get().Evaluate(request, "server", nil)
 [docs/caching.md](../../docs/caching.md#cron-syntax). `go test -run '^$' -bench EvaluateTransfer`
 measures evaluations per second ([docs/performance.md](../../docs/performance.md)).
 
+### Enforcing
+
+`rules.Enforce(request, "server", nil)` returns an allowed result, or a `*RuleViolation` error for a
+denied one; `Problem()` is the HTTP answer (RFC 9457 problem details, status 422, the same in every
+Rule Cascade runtime). The `rulehttp` package does it as `net/http` middleware:
+
+```go
+import "rulescascade.com/go/rulehttp"
+
+mux.Handle("POST /orders", rulehttp.Enforce(rules, rulehttp.Options{Entity: "Order", Operation: "create",
+	Actor: func(r *http.Request) map[string]any { return actorFromToken(r) }})(createOrder))
+// in the handler: rulehttp.FromContext(r.Context()) is the allowed result
+```
+
+The JSON body is the entity by default and stays readable for the handler. `rulehttp.WriteError(w,
+err)` answers a `*RuleViolation` (422) or a `*RequestError` (400) in handlers that call `Enforce`
+themselves. Walkthrough: https://rulescascade.com/get-started/first-app/
+
 ## Command
 
 Build it from this directory:
@@ -261,7 +279,7 @@ dist/rcas version
 ```
 
 ```text
-rcas 1.0.0-alpha.6 (specification 1.0.0, bundle format 1.0.0)
+rcas 1.0.0-alpha.7 (specification 1.0.0, bundle format 1.0.0)
 ```
 
 | Command | Does |
@@ -379,7 +397,7 @@ printf '%s\n' '{"id":1,"command":"version"}' '{"id":2,"command":"expression","ex
 ```
 
 ```text
-{"id":1,"ok":true,"result":{"engine":"rule-cascade-go","engineVersion":"1.0.0-alpha.6","ruleCascade":"1.0.0","bundle":"1.0.0","levels":["evaluator","compiler"],"operators":[]}}
+{"id":1,"ok":true,"result":{"engine":"rule-cascade-go","engineVersion":"1.0.0-alpha.7","ruleCascade":"1.0.0","bundle":"1.0.0","levels":["evaluator","compiler"],"operators":[]}}
 {"id":2,"ok":true,"result":0.3}
 ```
 

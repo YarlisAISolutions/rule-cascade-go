@@ -52,6 +52,9 @@ type Config struct {
 	Proposals struct {
 		Dir string `json:"dir"`
 	} `json:"proposals"`
+	Agents struct {
+		Tools []string `json:"tools"` // the AI coding tools 'rcas agent install' writes for
+	} `json:"agents"`
 
 	// Path is the file the configuration was read from; Root is its directory, which every
 	// relative path in it is resolved against.
@@ -172,6 +175,11 @@ func readConfig(path string) (*Config, error) {
 	for _, lang := range cfg.Languages {
 		if _, ok := languages[lang]; !ok {
 			return nil, fmt.Errorf("%s: unknown language %q (%s)", path, lang, strings.Join(languageNames(), ", "))
+		}
+	}
+	for _, tool := range cfg.Agents.Tools {
+		if _, ok := findAgentTool(tool); !ok {
+			return nil, fmt.Errorf("%s: unknown agent tool %q (%s)", path, tool, strings.Join(agentToolNames(), ", "))
 		}
 	}
 	cfg.Path, _ = filepath.Abs(path)

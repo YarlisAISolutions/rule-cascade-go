@@ -30,14 +30,31 @@ type Client struct {
 	Format string
 }
 
-// All is every client 'rcas mcp install' writes, in the order 'all' installs them.
+// All is every client 'rcas mcp install' writes, in the order 'all' installs them. Paths and keys
+// follow each tool's documentation (October 2026; docs/agents.md has the sources). Tools whose only
+// MCP configuration is interactive (Goose, the Cline UI) or lives in repository settings (the Copilot
+// cloud agent) are covered by --print.
 var All = []Client{
 	{Name: "claude", Title: "Claude Code", CLI: "claude", Project: ".mcp.json", Key: "mcpServers", Format: "json"},
 	{Name: "codex", Title: "OpenAI Codex CLI and IDE extension", CLI: "codex", User: ".codex/config.toml", Key: "mcp_servers", Format: "toml"},
 	{Name: "cursor", Title: "Cursor", Project: ".cursor/mcp.json", User: ".cursor/mcp.json", Key: "mcpServers", Format: "json"},
-	{Name: "windsurf", Title: "Windsurf", User: ".codeium/windsurf/mcp_config.json", Key: "mcpServers", Format: "json"},
-	{Name: "gemini", Title: "Gemini CLI", Project: ".gemini/settings.json", User: ".gemini/settings.json", Key: "mcpServers", Format: "json"},
 	{Name: "vscode", Title: "VS Code (GitHub Copilot agent mode)", Project: ".vscode/mcp.json", Key: "servers", Format: "json"},
+	{Name: "copilot-cli", Title: "GitHub Copilot CLI", CLI: "copilot", Project: ".mcp.json", User: ".copilot/mcp-config.json", Key: "mcpServers", Format: "json"},
+	{Name: "gemini", Title: "Gemini CLI", Project: ".gemini/settings.json", User: ".gemini/settings.json", Key: "mcpServers", Format: "json"},
+	{Name: "kiro", Title: "Kiro", Project: ".kiro/settings/mcp.json", User: ".kiro/settings/mcp.json", Key: "mcpServers", Format: "json"},
+	{Name: "devin", Title: "Devin Desktop and Devin CLI (formerly Windsurf)", Project: ".devin/mcp_config.json", User: ".config/devin/mcp_config.json", Key: "mcpServers", Format: "json"},
+	{Name: "windsurf", Title: "Windsurf (the configuration file before Devin Desktop)", User: ".codeium/windsurf/mcp_config.json", Key: "mcpServers", Format: "json"},
+	{Name: "junie", Title: "JetBrains Junie", Project: ".junie/mcp/mcp.json", User: ".junie/mcp/mcp.json", Key: "mcpServers", Format: "json"},
+	{Name: "cline", Title: "Cline", User: ".cline/data/settings/cline_mcp_settings.json", Key: "mcpServers", Format: "json"},
+	{Name: "opencode", Title: "OpenCode", Project: "opencode.json", User: ".config/opencode/opencode.json", Key: "mcp", Format: "json"},
+	{Name: "kilo", Title: "Kilo Code", Project: "kilo.json", Key: "mcp", Format: "json"},
+	{Name: "factory", Title: "Factory Droid", Project: ".factory/mcp.json", User: ".factory/mcp.json", Key: "mcpServers", Format: "json"},
+	{Name: "amp", Title: "Amp", Project: ".amp/settings.json", User: ".config/amp/settings.json", Key: "amp.mcpServers", Format: "json"},
+	{Name: "zed", Title: "Zed", Project: ".zed/settings.json", User: ".config/zed/settings.json", Key: "context_servers", Format: "json"},
+	{Name: "warp", Title: "Warp", Project: ".warp/.mcp.json", User: ".warp/.mcp.json", Key: "mcpServers", Format: "json"},
+	{Name: "augment", Title: "Augment Code (Auggie)", User: ".augment/settings.json", Key: "mcpServers", Format: "json"},
+	{Name: "amazonq", Title: "Amazon Q Developer", Project: ".amazonq/mcp.json", User: ".aws/amazonq/mcp.json", Key: "mcpServers", Format: "json"},
+	{Name: "muse", Title: "Meta Muse Code", User: ".config/muse/settings.json", Key: "mcp_servers", Format: "json"},
 }
 
 // Find returns the client with that name.
@@ -173,23 +190,44 @@ func Write(t *Target) error {
 	return werr
 }
 
-// entry is the server entry of a JSON configuration.
+// entry is the server entry of a JSON configuration, in the shape the client expects.
 func entry(c Client, s Server) *rulecascade.Object {
 	e := rulecascade.NewObject()
-	if c.Name == "vscode" {
-		e.Set("type", "stdio")
-	}
-	e.Set("command", s.Command)
 	args := make([]any, len(s.Args))
 	for i, a := range s.Args {
 		args[i] = a
 	}
+	switch c.Name {
+	case "opencode", "kilo":
+		// one command array, "local" for a process
+		e.Set("type", "local")
+		e.Set("command", append([]any{s.Command}, args...))
+		e.Set("enabled", true)
+		return e
+	case "muse":
+		e.Set("transport", "stdio")
+	case "vscode", "factory":
+		e.Set("type", "stdio")
+	}
+	e.Set("command", s.Command)
 	e.Set("args", args)
 	return e
 }
 
-func mergeJSON(before []byte, c Client, s Server, force bool) (after []byte, exists, same bool, err error) {
+// newFile is the content of a configuration file the client needs before any entry.
+func newFile(c Client) *rulecascade.Object {
 	root := rulecascade.NewObject()
+	switch c.Name {
+	case "muse":
+		root.Set("schema_version", 1)
+	case "opencode":
+		root.Set("$schema", "https://opencode.ai/config.json")
+	}
+	return root
+}
+
+func mergeJSON(before []byte, c Client, s Server, force bool) (after []byte, exists, same bool, err error) {
+	root := newFile(c)
 	if len(bytes.TrimSpace(before)) > 0 {
 		doc, err := rulecascade.ParseJSON(before)
 		if err != nil {
@@ -329,7 +367,7 @@ func Snippet(c Client, s Server) string {
 		out, _, _, _ := mergeTOML(nil, c.Key, s, true)
 		return string(out)
 	}
-	root := rulecascade.NewObject()
+	root := newFile(c)
 	servers := rulecascade.NewObject()
 	servers.Set(s.Name, entry(c, s))
 	root.Set(c.Key, servers)
@@ -347,6 +385,8 @@ func CLIArgs(c Client, scope string, s Server) []string {
 	case "gemini":
 		// the -- is needed, or gemini reads -y as its own option
 		return append([]string{"gemini", "mcp", "add", "-s", scope, s.Name, s.Command, "--"}, s.Args...)
+	case "copilot-cli":
+		return append([]string{"copilot", "mcp", "add", s.Name, "--", s.Command}, s.Args...)
 	}
 	return nil
 }

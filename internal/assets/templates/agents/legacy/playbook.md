@@ -70,13 +70,3 @@ every language evaluates identically. Rules are not re-implemented in applicatio
 | `rcas analyze [path]` | inventory schemas and validation code |
 | `rcas derive <api.yaml> --schema <Name> --id <ruleset.id> --propose` | baseline rules from a schema, as a proposal |
 | `rcas proposals list` / `show <id>` | what is waiting for review |
-
-### Skills
-
-Step-by-step instructions for each task are in skills (`.agents/skills/`; Claude Code, Kiro and
-Cline get copies in their own folders). Load the one that matches the task:
-
-{{skills}}
-
-Skills marked `rcas-managed` are refreshed by `rcas agent install`; delete that line in a skill to
-keep your own edits. Add team skills next to them under any other name.

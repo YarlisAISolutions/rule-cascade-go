@@ -22,12 +22,29 @@ func Template(name string) string {
 	return string(data)
 }
 
-// ClaudeAgents lists the Claude Code sub-agents, by file name.
-func ClaudeAgents() []string {
-	entries, _ := fs.ReadDir(files, "templates/agents/claude-agents")
+// Roles lists the agent roles (sub-agents), by file name: templates/agents/roles/<name>.md, written
+// in Claude Code's format and converted for the other tools.
+func Roles() []string {
+	return list("templates/agents/roles", false)
+}
+
+// Skills lists the skills, by name: templates/agents/skills/<name>/SKILL.md.
+func Skills() []string {
+	return list("templates/agents/skills", true)
+}
+
+// Skill returns the SKILL.md of a skill.
+func Skill(name string) string {
+	return Template("skills/" + name + "/SKILL.md")
+}
+
+func list(dir string, dirs bool) []string {
+	entries, _ := fs.ReadDir(files, dir)
 	var out []string
 	for _, e := range entries {
-		out = append(out, e.Name())
+		if e.IsDir() == dirs {
+			out = append(out, e.Name())
+		}
 	}
 	sort.Strings(out)
 	return out

@@ -27,9 +27,12 @@ reaches the rules until a person runs '{program} proposals accept'.
   --read-only       leave out propose_ruleset
   --list-tools      print the tools and exit
 
-install <client>... registers the server with AI coding tools: claude, codex, cursor, windsurf,
-gemini, vscode, or all. It uses the tool's own command where there is one (claude mcp add, codex mcp
-add) and otherwise merges an entry into its configuration file, keeping everything else there.
+install <client>... registers the server with AI coding tools: claude, codex, cursor, vscode,
+copilot-cli, gemini, kiro, devin, windsurf, junie, cline, opencode, kilo, factory, amp, zed, warp,
+augment, amazonq, muse, or all. It uses the tool's own command where it runs one reliably (claude mcp
+add, codex mcp add) and otherwise merges an entry into the tool's configuration file, in the shape
+that tool expects, keeping everything else there. Goose ('goose configure') and the GitHub Copilot
+cloud agent (repository settings) are configured by hand: --print shows the entry.
 
   --scope project|user   project files are committed and shared; user files apply to every project
                          (default: project where the tool has a project file)

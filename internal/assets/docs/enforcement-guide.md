@@ -356,6 +356,16 @@ The backend holds the decision. It does seven things, in this order.
    from the `x-rule-cascade` tag of the route, never from the request.
 4. **On `deny`, return `422`** with RFC 9457 problem details that carry the whole evaluation result.
    Change nothing.
+   Every runtime builds this answer the same way (`conformance/problem-details.json`): `enforce`
+   raises a rule-violation error whose `problem()` is the body, and the HTTP helpers send it.
+
+   | Runtime | Enforce | The 422 answer | One-line integration |
+   |---|---|---|---|
+   | TypeScript | `rules.enforce(request)` throws `RuleViolationError` | `error.problem()`, `problemDetails(result)` | `@rules-cascade/core/http`: `rulesMiddleware` (Express), `rulesPreHandler` (Fastify), `rulesErrorHandler` |
+   | Python | `rules.enforce(request, "server")` raises `RuleViolation` | `error.problem()`, `problem_details(result)` | `@enforce_rules(...)`; `rule_cascade.fastapi`, `.flask`, `.django` |
+   | Java | `rules.enforce(request)` throws `RuleViolationException` | `e.problem()`, `RuleViolationException.problemDetails(result)` | one `@ExceptionHandler`; `@EnforceRules` in the Spring Boot example |
+   | Go | `rules.Enforce(request, "server", nil)` returns `*RuleViolation` | `err.Problem()`, `ProblemDetails(result)` | `rulehttp.Enforce` middleware, `rulehttp.WriteError` |
+
 5. **On `allow`, apply the computed values and persist.** The result carries effects, not the
    computed record: write each `value` effect of the server evaluation into the record before you
    store it, and ignore what the client sent for a computed field. Write the returned commands to
