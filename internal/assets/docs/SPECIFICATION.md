@@ -1,6 +1,6 @@
 # Rule Cascade 1.0 Specification
 
-Status: draft (`1.0.0-alpha.7`). The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
+Status: draft (`1.0.0-alpha.8`). The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
 This document defines the behaviour every runtime must reproduce, in every programming language and
 on every operating system. The structure of a ruleset document is defined by
@@ -500,7 +500,7 @@ decision to `deny` and discards all commands. A finding MAY carry a runtime-spec
 | Field | Value |
 |---|---|
 | `rule`, `code`, `severity` | From the rule |
-| `message` | The template for the request `locale`. Catalogs are consulted from most to least specific: the requested tag, then the tag with its last subtag removed, and so on (`fr-CA-x-a`, `fr-CA`, `fr`), then the default locale, then the key itself. Tags are compared exactly, including case. Each `{name}` is replaced by the rendered argument; unknown placeholders stay as written |
+| `message` | The template for the request `locale`. Catalogs are consulted from most to least specific: the requested tag, then the tag with its last subtag removed, and so on (`fr-CA-x-a`, `fr-CA-x`, `fr-CA`, `fr`), then the default locale, then the key itself. Subtags are separated by `-` and may be empty (`fr--CA` consults `fr--CA`, `fr-`, `fr`). Tags are compared exactly, including case. A tag longer than every catalog's tag cannot match one, so an implementation need not form it: the work does not grow with the length of `locale`. Each `{name}` is replaced by the rendered argument; unknown placeholders stay as written |
 | `fields` | The target pointer(s); with `forEach`, prefixed by `<forEach>/<index>`; for a type rule, the pointer of the bound field |
 | `location` | The `page`, `screen`, `section` and `component` the target names; absent when it names none |
 | `status` | `open`, `acknowledged` or `accepted` |

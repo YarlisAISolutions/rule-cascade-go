@@ -630,3 +630,132 @@ func TestAgentInstallUpgrade(t *testing.T) {
 		t.Errorf("the old Copilot block was not replaced:\n%s", copilot)
 	}
 }
+
+// --hosted serves no project: each tool call brings its files, and nothing stays behind.
+func TestMCPHosted(t *testing.T) {
+	src := t.TempDir()
+	in(t, src, "", "init", "--name", "Example", "--ci", "none")
+	ruleset := readFile(t, filepath.Join(src, "rules", "example.ruleset.yaml"))
+	files := []any{map[string]any{"path": "rules/example.ruleset.yaml", "content": ruleset},
+		map[string]any{"path": "rules/order.schema.json", "content": readFile(t, filepath.Join(src, "rules", "order.schema.json"))}}
+	call := func(id int, name string, args map[string]any) string {
+		msg, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{"name": name, "arguments": args,
+			"_meta": map[string]any{"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": map[string]any{}}}})
+		return string(msg)
+	}
+	input := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`,
+		call(2, "check", map[string]any{"files": files}),
+		call(3, "evaluate_rules", map[string]any{"files": files, "ruleset": "example.example", "entity": "Order", "operation": "create", "data_json": `{"quantity":11}`}),
+		call(4, "evaluate_rules", map[string]any{"ruleset": "example.example", "entity": "Order", "operation": "create", "data_json": `{}`}),
+		call(5, "check", map[string]any{"files": []any{map[string]any{"path": "../../x.ruleset.yaml", "content": "x"}}}),
+		call(6, "propose_ruleset", map[string]any{"id": "x", "title": "x", "files": files}),
+		call(8, "compile", map[string]any{"files": files, "path": "rules/missing.ruleset.yaml"}),
+		`{"jsonrpc":"2.0","id":7,"method":"resources/list"}`,
+	}, "\n") + "\n"
+	empty := t.TempDir()
+	status, out, errs := in(t, empty, input, "mcp", "--hosted")
+	if status != 0 || errs != "" {
+		t.Fatalf("%d %s", status, errs)
+	}
+	replies := map[float64]map[string]any{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("not JSON on stdout: %q", line)
+		}
+		replies[m["id"].(float64)] = m
+	}
+	names := map[string]bool{}
+	for _, tool := range replies[1]["result"].(map[string]any)["tools"].([]any) {
+		tool := tool.(map[string]any)
+		names[tool["name"].(string)] = true
+		if tool["name"] == "evaluate_rules" {
+			required := tool["inputSchema"].(map[string]any)["required"].([]any)
+			if required[len(required)-1] != "files" {
+				t.Errorf("hosted tools require files: %v", required)
+			}
+		}
+	}
+	for _, local := range []string{"analyze", "propose_ruleset", "list_proposals", "get_proposal"} {
+		if names[local] {
+			t.Errorf("hosted mode serves %s", local)
+		}
+	}
+	text := func(id float64) (string, bool) {
+		r := replies[id]["result"].(map[string]any)
+		isErr, _ := r["isError"].(bool)
+		return r["content"].([]any)[0].(map[string]any)["text"].(string), isErr
+	}
+	if s, isErr := text(2); isErr || !strings.Contains(s, `"ok": true`) || !strings.Contains(s, `"path": "rules/example.ruleset.yaml"`) {
+		t.Errorf("check: %s", s)
+	}
+	if s, isErr := text(3); isErr || !strings.Contains(s, `"decision": "deny"`) {
+		t.Errorf("evaluate: %s", s)
+	}
+	if s, isErr := text(4); !isErr || !strings.Contains(s, "files") {
+		t.Errorf("evaluate without files: %s", s)
+	}
+	if s, isErr := text(5); !isErr || !strings.Contains(s, "leaves the project") {
+		t.Errorf("escape: %s", s)
+	}
+	if s, isErr := text(8); !isErr || strings.Contains(s, "rcas-mcp-") || !strings.Contains(s, "rules/missing.ruleset.yaml") {
+		t.Errorf("an error names the file as sent: %s", s)
+	}
+	if _, ok := replies[6]["error"]; !ok {
+		t.Errorf("propose_ruleset in hosted mode: %v", replies[6])
+	}
+	for _, r := range replies[7]["result"].(map[string]any)["resources"].([]any) {
+		if strings.HasPrefix(r.(map[string]any)["uri"].(string), "rcas://rulesets/") {
+			t.Errorf("hosted mode lists project rulesets: %v", r)
+		}
+	}
+	if entries, _ := os.ReadDir(empty); len(entries) != 0 {
+		t.Errorf("hosted mode wrote into the working directory: %v", entries)
+	}
+}
+
+// mcp install --url writes the remote entry in the shape each tool expects.
+func TestMCPInstallURL(t *testing.T) {
+	dir := t.TempDir()
+	in(t, dir, "", "init", "--name", "Example", "--ci", "none")
+	url := "https://mcp.rulescascade.com/mcp"
+	if status, out, errs := in(t, dir, "", "mcp", "install", "cursor", "vscode", "gemini", "opencode", "devin", "--file", "--url", url); status != 0 {
+		t.Fatalf("%d %s %s", status, out, errs)
+	}
+	entry := func(file, key string) map[string]any {
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(readFile(t, filepath.Join(dir, file))), &doc); err != nil {
+			t.Fatal(err)
+		}
+		return doc[key].(map[string]any)["rules-cascade"].(map[string]any)
+	}
+	if e := entry(".cursor/mcp.json", "mcpServers"); e["url"] != url || e["command"] != nil {
+		t.Errorf("cursor %v", e)
+	}
+	if e := entry(".vscode/mcp.json", "servers"); e["type"] != "http" || e["url"] != url {
+		t.Errorf("vscode %v", e)
+	}
+	if e := entry(".gemini/settings.json", "mcpServers"); e["httpUrl"] != url || e["url"] != nil {
+		t.Errorf("gemini %v", e)
+	}
+	if e := entry("opencode.json", "mcp"); e["type"] != "remote" || e["url"] != url {
+		t.Errorf("opencode %v", e)
+	}
+	if e := entry(".devin/mcp_config.json", "mcpServers"); e["serverUrl"] != url {
+		t.Errorf("devin %v", e)
+	}
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "codex"))
+	if status, _, errs := in(t, dir, "", "mcp", "install", "codex", "--file", "--url", url); status != 0 {
+		t.Fatal(errs)
+	}
+	if toml := readFile(t, filepath.Join(dir, "codex", "config.toml")); !strings.Contains(toml, "[mcp_servers.rules-cascade]\nurl = \""+url+"\"\n") {
+		t.Errorf("codex %q", toml)
+	}
+	if status, _, _ := in(t, dir, "", "mcp", "install", "cursor", "--url", "ftp://x"); status == 0 {
+		t.Error("an ftp URL is refused")
+	}
+	if status, _, _ := in(t, dir, "", "mcp", "install", "cursor", "--url", url, "--command", "binary"); status == 0 {
+		t.Error("--url with --command is refused")
+	}
+}

@@ -227,12 +227,14 @@ var roots = map[string]bool{"data": true, "original": true, "actor": true, "ctx"
 // lookup follows a dot path from a root. Missing paths, and roots that do not exist, are null. In
 // a list a segment of ASCII digits is a decimal index.
 func lookup(path string, vars map[string]any) any {
-	segments := strings.Split(path, ".")
-	if !roots[segments[0]] {
+	root, rest, more := strings.Cut(path, ".")
+	if !roots[root] {
 		return nil
 	}
-	node := vars[segments[0]]
-	for _, seg := range segments[1:] {
+	node := vars[root]
+	for more {
+		var seg string
+		seg, rest, more = strings.Cut(rest, ".")
 		switch x := node.(type) {
 		case *Object:
 			node = x.vals[seg]
@@ -303,6 +305,21 @@ var arity = map[string]int{"not": 1, "exists": 1, "empty": 1, "len": 1, "lower":
 var arityRange = map[string][2]int{"round": {1, 2}, "substring": {2, 3}} // inclusive
 
 var arityMin = map[string]int{"min": 1, "max": 1}
+
+// arities merges the three tables above so dispatch costs one map lookup; max -1 is unbounded.
+var arities = func() map[string]struct{ min, max int } {
+	m := map[string]struct{ min, max int }{}
+	for op, n := range arity {
+		m[op] = struct{ min, max int }{n, n}
+	}
+	for op, r := range arityRange {
+		m[op] = struct{ min, max int }{r[0], r[1]}
+	}
+	for op, n := range arityMin {
+		m[op] = struct{ min, max int }{n, -1}
+	}
+	return m
+}()
 
 func callFunction(name string, args []any, s *scope, depth int) any {
 	fn := s.functions.obj(name)
@@ -459,14 +476,15 @@ func evAt(e any, s *scope, depth int) any {
 		fail("not an expression: expected a literal, {var}, {op, args} or {fn, args}")
 	}
 	n, inner := len(args), depth+1
-	if want, ok := arity[op]; ok && n != want {
-		fail("%s takes %d argument(s), got %d", op, want, n)
-	}
-	if want, ok := arityRange[op]; ok && (n < want[0] || n > want[1]) {
-		fail("%s takes %d to %d arguments, got %d", op, want[0], want[1], n)
-	}
-	if want, ok := arityMin[op]; ok && n < want {
-		fail("%s takes at least %d argument(s)", op, want)
+	if want, ok := arities[op]; ok && (n < want.min || (want.max >= 0 && n > want.max)) {
+		switch {
+		case want.min == want.max:
+			fail("%s takes %d argument(s), got %d", op, want.min, n)
+		case want.max >= 0:
+			fail("%s takes %d to %d arguments, got %d", op, want.min, want.max, n)
+		default:
+			fail("%s takes at least %d argument(s)", op, want.min)
+		}
 	}
 
 	// lazy operators
@@ -558,9 +576,20 @@ func evAt(e any, s *scope, depth int) any {
 		if (op == "div" || op == "mod") && b.isZero() {
 			fail("division by zero")
 		}
-		operation := map[string]func(decimal) (decimal, error){
-			"add": a.add, "sub": a.sub, "mul": a.mul, "div": a.div, "mod": a.rem}[op]
-		result, err := operation(b)
+		var result decimal
+		var err error
+		switch op {
+		case "add":
+			result, err = a.add(b)
+		case "sub":
+			result, err = a.sub(b)
+		case "mul":
+			result, err = a.mul(b)
+		case "div":
+			result, err = a.div(b)
+		default:
+			result, err = a.rem(b)
+		}
 		return arithmetic(op, result, err)
 	case "abs":
 		d := num(v[0])

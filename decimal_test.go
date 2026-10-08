@@ -1,6 +1,12 @@
 package rulecascade
 
-import "testing"
+import (
+	"math/big"
+	"math/rand"
+	"strconv"
+	"strings"
+	"testing"
+)
 
 // The expected values in this file were computed with Python's decimal module, the arithmetic of
 // the reference implementation: precision 34 for the operations, precision 15 for numbers leaving
@@ -383,5 +389,78 @@ func TestDecimalWholeNumbers(t *testing.T) {
 	}
 	if got := mustDecimal(t, "1200e-2").toInt(); got != 12 {
 		t.Errorf("toInt(12.00) = %d", got)
+	}
+}
+
+// parseDecimalWithBigInt is parseDecimal without its fast path: every coefficient and exponent
+// goes through big.Int.
+func parseDecimalWithBigInt(s string) (decimal, bool) {
+	d := decimal{}
+	if strings.HasPrefix(s, "-") {
+		d.neg, s = true, s[1:]
+	}
+	mantissa, exponent := s, ""
+	if i := strings.IndexAny(s, "eE"); i >= 0 {
+		mantissa, exponent = s[:i], s[i+1:]
+		if exponent == "" {
+			return d, false
+		}
+	}
+	whole, fraction, _ := strings.Cut(mantissa, ".")
+	if whole+fraction == "" {
+		return d, false
+	}
+	coef, ok := new(big.Int).SetString(whole+fraction, 10)
+	if !ok || coef.Sign() < 0 {
+		return d, false
+	}
+	d.coef, d.exp = coef, -len(fraction)
+	if exponent != "" {
+		e, ok := new(big.Int).SetString(exponent, 10)
+		if !ok || !e.IsInt64() || e.Int64() > 2*maxExponent || e.Int64() < 2*minExponent {
+			return d, false
+		}
+		d.exp += int(e.Int64())
+	}
+	return d, true
+}
+
+// The fast paths of parseDecimal, digits and pow10 give exactly what big.Int gives.
+func TestDecimalFastPaths(t *testing.T) {
+	inputs := []string{"0", "-0", "1", "+1", "1.", ".5", "00012", "1e5", "1E-5", "1e+3", "1e", "", "-",
+		"abc", "1_0", "1.2.3", "--1", "+-1", "0x10", "1,5", " 1",
+		"9999999999999999999", "18446744073709551615", "18446744073709551616", "99999999999999999999",
+		"999999999.9999999999", "0.0000000000000000001", "12345678901234567890.5"}
+	random := rand.New(rand.NewSource(1))
+	for i := 0; i < 20000; i++ {
+		var b strings.Builder
+		if random.Intn(3) == 0 {
+			b.WriteByte('-')
+		}
+		for k, n := 0, random.Intn(25)+1; k < n; k++ {
+			b.WriteByte(byte('0' + random.Intn(10)))
+			if random.Intn(15) == 0 {
+				b.WriteByte('.')
+			}
+		}
+		if random.Intn(5) == 0 {
+			b.WriteString("e" + strconv.Itoa(random.Intn(40)-20))
+		}
+		inputs = append(inputs, b.String())
+	}
+	for _, s := range inputs {
+		got, gotOK := parseDecimal(s)
+		want, wantOK := parseDecimalWithBigInt(s)
+		if gotOK != wantOK || (gotOK && (got.neg != want.neg || got.exp != want.exp || got.coef.Cmp(want.coef) != 0)) {
+			t.Fatalf("parseDecimal(%q) = %v %v, want %v %v", s, got, gotOK, want, wantOK)
+		}
+		if gotOK && got.digits() != len(got.coef.Text(10)) {
+			t.Fatalf("digits of %q = %d, want %d", s, got.digits(), len(got.coef.Text(10)))
+		}
+	}
+	for n := 0; n <= 140; n++ {
+		if want := new(big.Int).Exp(bigTen, big.NewInt(int64(n)), nil); pow10(n).Cmp(want) != 0 {
+			t.Fatalf("pow10(%d) = %v, want %v", n, pow10(n), want)
+		}
 	}
 }

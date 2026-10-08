@@ -16,8 +16,12 @@ import (
 //
 // No result depends on the order of the members of an object, but a manifest or a bundle that comes
 // out in the order it was written is easier to read and to compare, so every JSON object this
-// package reads or returns is an *Object. The zero value is an empty object. An Object must not be
-// modified once it has been handed to this package or returned by it.
+// package reads or returns is an *Object. The zero value is an empty object.
+//
+// A manifest is an *Object that a RuleSet keeps: Manifest and Bundle return it, not a copy. A
+// change to it applies to the evaluations that follow; changing it while it is being evaluated is
+// a data race in the caller. Documents and requests passed in are copied first, so changing them
+// afterwards has no effect.
 type Object struct {
 	keys []string
 	vals map[string]any

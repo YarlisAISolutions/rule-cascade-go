@@ -7,6 +7,10 @@ description: Find business rules in code and turn them into Rule Cascade ruleset
 
 Rules are data in `{{rules}}/*.ruleset.yaml`, compiled by `rcas` and evaluated identically in every
 language. Work through the `rules-cascade` MCP server when it is connected; otherwise run `rcas`.
+When the server is the hosted one (`mcp.rulescascade.com`), it sees no project: send the rulesets
+and schemas in the `files` argument. It cannot propose: to submit, switch to the local server
+(`rcas mcp`) and call `propose_ruleset`, or show the user the exact checked ruleset and the path to
+save it under.
 
 ## Checklist
 

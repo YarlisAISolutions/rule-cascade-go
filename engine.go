@@ -273,7 +273,7 @@ func (e *Engine) dispatch(request *Object) (any, *protocolError) {
 		if command == "manifest" {
 			return mf, nil
 		}
-		result, err := evaluate(mf, request.get("request"), e.operators)
+		result, err := evaluateWith(mf, rs.plan(mf), request.get("request"), e.operators)
 		if err != nil {
 			return nil, badRequest("%v", err)
 		}

@@ -47,6 +47,7 @@ type schemaError struct {
 type validator struct {
 	root   *Object
 	errors []schemaError
+	broken *error // why a pattern of the schema could not be applied, shared with every probe
 }
 
 func (v *validator) fail(path []string, format string, args ...any) {
@@ -55,7 +56,7 @@ func (v *validator) fail(path []string, format string, args ...any) {
 
 // valid reports whether an instance satisfies a schema, without recording why not.
 func (v *validator) valid(schema, instance any) bool {
-	probe := &validator{root: v.root}
+	probe := &validator{root: v.root, broken: v.broken}
 	probe.check(schema, instance, nil)
 	return len(probe.errors) == 0
 }
@@ -86,11 +87,15 @@ func hasDuplicates(list []any) bool {
 }
 
 // matchesPattern applies a pattern of the schema. Every pattern in the schema is a portable
-// pattern (specification section 4.4), so each runtime can check it with the engine it has.
-func matchesPattern(pattern, s string) bool {
+// pattern (specification section 4.4), so each runtime can check it with the engine it has. A
+// pattern that cannot be applied fails closed: schemaProblems then refuses the document.
+func (v *validator) matchesPattern(pattern, s string) bool {
 	re, err := compilePattern(pattern)
 	if err != nil {
-		panic("rulecascade: the embedded schema has a pattern that is not portable: " + err.Error())
+		if *v.broken == nil {
+			*v.broken = err
+		}
+		return false
 	}
 	return re.MatchString(s)
 }
@@ -142,7 +147,7 @@ func (v *validator) check(schema, instance any, path []string) {
 		if least, ok := s.Get("minLength"); ok && decimalFromInt(int64(utf8.RuneCountInString(x))).cmp(dec(least)) < 0 {
 			v.fail(path, "%s is too short", show(x))
 		}
-		if pattern, ok := s.get("pattern").(string); ok && !matchesPattern(pattern, x) {
+		if pattern, ok := s.get("pattern").(string); ok && !v.matchesPattern(pattern, x) {
 			v.fail(path, "%s does not match %s", show(x), show(pattern))
 		}
 	case []any:
@@ -205,7 +210,7 @@ func (v *validator) checkObject(s, x *Object, path []string, child func(string) 
 			v.check(sub, x.vals[key], child(key))
 		}
 		for _, pattern := range patterns.names() {
-			if matchesPattern(pattern, key) {
+			if v.matchesPattern(pattern, key) {
 				known = true
 				v.check(patterns.vals[pattern], x.vals[key], child(key))
 			}
@@ -235,8 +240,11 @@ func (v *validator) checkObject(s, x *Object, path []string, child func(string) 
 
 // schemaProblems validates a document against the ruleset schema.
 func schemaProblems(doc any) []Problem {
-	v := &validator{root: ruleSetSchema()}
+	v := &validator{root: ruleSetSchema(), broken: new(error)}
 	v.check(v.root, doc, nil)
+	if *v.broken != nil {
+		return []Problem{{Code: "SCHEMA_INVALID", Message: "<root>: the schema could not be applied: " + (*v.broken).Error()}}
+	}
 	sort.SliceStable(v.errors, func(i, j int) bool {
 		a, b := v.errors[i].path, v.errors[j].path
 		for k := 0; k < len(a) && k < len(b); k++ {

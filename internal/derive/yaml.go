@@ -195,25 +195,40 @@ func parseYAML(data []byte) (any, error) {
 	} else if err != io.EOF {
 		return nil, err
 	}
-	return yamlValue(&document, 0)
+	// aliases repeat what they point to: a short document of nested aliases would otherwise expand
+	// without end, so a document may expand to ten times the nodes it is written with
+	budget := 10*countNodes(&document) + 1000
+	return yamlValue(&document, 0, &budget)
 }
 
-func yamlValue(node *yaml.Node, depth int) (any, error) {
+// countNodes counts the nodes of a document as written, without following aliases.
+func countNodes(node *yaml.Node) int {
+	n := 1
+	for _, child := range node.Content {
+		n += countNodes(child)
+	}
+	return n
+}
+
+func yamlValue(node *yaml.Node, depth int, budget *int) (any, error) {
 	if depth > 1000 {
 		return nil, errors.New("the document is nested too deeply")
+	}
+	if *budget--; *budget < 0 {
+		return nil, fmt.Errorf("line %d: the aliases of the document expand too much", node.Line)
 	}
 	switch node.Kind {
 	case yaml.DocumentNode:
 		if len(node.Content) == 0 {
 			return nil, nil
 		}
-		return yamlValue(node.Content[0], depth+1)
+		return yamlValue(node.Content[0], depth+1, budget)
 	case yaml.AliasNode:
-		return yamlValue(node.Alias, depth+1)
+		return yamlValue(node.Alias, depth+1, budget)
 	case yaml.SequenceNode:
 		list := make([]any, 0, len(node.Content))
 		for _, item := range node.Content {
-			v, err := yamlValue(item, depth+1)
+			v, err := yamlValue(item, depth+1, budget)
 			if err != nil {
 				return nil, err
 			}
@@ -223,7 +238,7 @@ func yamlValue(node *yaml.Node, depth int) (any, error) {
 	case yaml.MappingNode:
 		object := rulecascade.NewObject()
 		for i := 0; i+1 < len(node.Content); i += 2 {
-			key, err := yamlValue(node.Content[i], depth+1)
+			key, err := yamlValue(node.Content[i], depth+1, budget)
 			if err != nil {
 				return nil, err
 			}
@@ -234,7 +249,7 @@ func yamlValue(node *yaml.Node, depth int) (any, error) {
 			if _, repeated := object.Get(name); repeated {
 				return nil, fmt.Errorf("line %d: duplicate key %s", node.Content[i].Line, pyRepr(name))
 			}
-			v, err := yamlValue(node.Content[i+1], depth+1)
+			v, err := yamlValue(node.Content[i+1], depth+1, budget)
 			if err != nil {
 				return nil, err
 			}

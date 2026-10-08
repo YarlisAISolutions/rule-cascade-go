@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -437,5 +438,43 @@ messages:
 	status, stdout, _ := invoke(t, "", "check", path)
 	if status != 0 || !strings.Contains(stdout, "  NOTE  this command does not have the custom operators x-vat-id: ") || strings.Contains(stdout, "x-luhn") {
 		t.Errorf("status %d:\n%s", status, stdout)
+	}
+}
+
+// Nested aliases cannot make a short document expand without end; a few aliases still read.
+func TestYAMLAliasBudget(t *testing.T) {
+	bomb := "a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n"
+	for i := 1; i <= 9; i++ {
+		refs := strings.TrimSuffix(strings.Repeat(fmt.Sprintf("*a%d, ", i-1), 10), ", ")
+		bomb += fmt.Sprintf("a%d: &a%d [%s]\n", i, i, refs)
+	}
+	if _, _, err := parseYAML([]byte(bomb)); err == nil || !strings.Contains(err.Error(), "expand too much") {
+		t.Fatalf("an alias bomb: %v", err)
+	}
+	value, _, err := parseYAML([]byte("base: &b {x: 1}\none: *b\ntwo: *b\n"))
+	if err != nil || value == nil {
+		t.Errorf("a few aliases: %v", err)
+	}
+}
+
+func TestHideWorkspace(t *testing.T) {
+	unix := []string{"/var/folders/x/T", "/private/var/folders/x/T"}
+	windows := []string{`C:\Users\Jane Doe\AppData\Local\Temp`}
+	for _, tc := range []struct {
+		parents  []string
+		in, want string
+	}{
+		{unix, `/private/var/folders/x/T/rcas-mcp-12/rules/a.ruleset.yaml: open /var/folders/x/T/rcas-mcp-12/rules/a.ruleset.yaml: no such file`,
+			`rules/a.ruleset.yaml: open rules/a.ruleset.yaml: no such file`},
+		{unix, `/var/folders/x/T/rcas-mcp-12/rules/rcas-mcp-7/my dir/a.ruleset.yaml: bad`, `rules/rcas-mcp-7/my dir/a.ruleset.yaml: bad`},
+		{windows, `C:\Users\Jane Doe\AppData\Local\Temp\rcas-mcp-34\rules\my dir\a.ruleset.yaml: The system cannot find the file specified.`,
+			`rules/my dir/a.ruleset.yaml: The system cannot find the file specified.`},
+		{windows, `C:\Users\Jane Doe\AppData\Local\Temp\rcas-mcp-34\rules\rcas-mcp-12\a.ruleset.yaml: x`, `rules/rcas-mcp-12/a.ruleset.yaml: x`},
+		{unix, `no rule "x" in a.b`, `no rule "x" in a.b`},
+		{unix, `/var/folders/x/T/other: kept`, `/var/folders/x/T/other: kept`},
+	} {
+		if got := hideWorkspace(tc.in, tc.parents); got != tc.want {
+			t.Errorf("%s\n got %s\nwant %s", tc.in, got, tc.want)
+		}
 	}
 }

@@ -12,7 +12,7 @@ every language evaluates identically. Rules are not re-implemented in applicatio
 | Rulesets (source of truth) | `{{rules}}/**/*.ruleset.yaml` |
 | Compiled bundles and client manifests (generated, never edited) | `{{out}}/` |
 | Proposals waiting for a person | `.rcas/proposals/` |
-| Specification, guidelines, cookbook | MCP tools `get_spec_section`, `get_authoring_guide`, `get_operator_reference`; https://rulescascade.com |
+| Specification, guidelines, cookbook | MCP tools `get_spec_section`, `get_authoring_guide`, `get_operator_reference` (also on the hosted server, https://mcp.rulescascade.com/mcp); https://rulescascade.com |
 
 ### How to work
 

@@ -48,14 +48,18 @@ func parseDecimal(s string) (decimal, bool) {
 		}
 	}
 	whole, fraction, _ := strings.Cut(mantissa, ".")
-	if whole+fraction == "" {
+	if whole == "" && fraction == "" {
 		return d, false
 	}
-	coef, ok := new(big.Int).SetString(whole+fraction, 10)
-	if !ok || coef.Sign() < 0 {
-		return d, false
+	if u, ok := smallCoefficient(whole, fraction); ok { // most numbers: no big.Int parsing
+		d.coef, d.exp = new(big.Int).SetUint64(u), -len(fraction)
+	} else {
+		coef, ok := new(big.Int).SetString(whole+fraction, 10)
+		if !ok || coef.Sign() < 0 {
+			return d, false
+		}
+		d.coef, d.exp = coef, -len(fraction)
 	}
-	d.coef, d.exp = coef, -len(fraction)
 	if exponent != "" {
 		e, ok := new(big.Int).SetString(exponent, 10)
 		if !ok || !e.IsInt64() || e.Int64() > 2*maxExponent || e.Int64() < 2*minExponent {
@@ -66,14 +70,56 @@ func parseDecimal(s string) (decimal, bool) {
 	return d, true
 }
 
+// smallCoefficient reads whole and fraction as one coefficient when it has at most 19 ASCII
+// digits, which always fits a uint64. Anything else is left to big.Int.
+func smallCoefficient(whole, fraction string) (uint64, bool) {
+	if len(whole)+len(fraction) > 19 {
+		return 0, false
+	}
+	var u uint64
+	for _, part := range [2]string{whole, fraction} {
+		for i := 0; i < len(part); i++ {
+			if part[i] < '0' || part[i] > '9' {
+				return 0, false
+			}
+			u = u*10 + uint64(part[i]-'0')
+		}
+	}
+	return u, true
+}
+
+// powers of ten up to 10^127, shared: callers only ever read the result.
+var pow10s = func() []*big.Int {
+	t := make([]*big.Int, 128)
+	t[0] = big.NewInt(1)
+	for i := 1; i < len(t); i++ {
+		t[i] = new(big.Int).Mul(t[i-1], bigTen)
+	}
+	return t
+}()
+
+// pow10 returns 10^n. The result must not be modified.
 func pow10(n int) *big.Int {
+	if n >= 0 && n < len(pow10s) {
+		return pow10s[n]
+	}
 	return new(big.Int).Exp(bigTen, big.NewInt(int64(n)), nil)
 }
 
 func (d decimal) isZero() bool { return d.coef.Sign() == 0 }
 
 // digits is the number of decimal digits of the coefficient; zero has one.
-func (d decimal) digits() int { return len(d.coef.Text(10)) }
+func (d decimal) digits() int {
+	if d.coef.IsUint64() {
+		n, v := 1, d.coef.Uint64()
+		for v >= 10 {
+			v /= 10
+			n++
+		}
+		return n
+	}
+	return len(d.coef.Text(10))
+}
 
 // adjusted is the exponent of the most significant digit.
 func (d decimal) adjusted() int { return d.exp + d.digits() - 1 }

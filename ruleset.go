@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 // Loading: schema validation, inheritance, load-time checks, checksum, manifests (specification
@@ -768,7 +769,8 @@ func filterKeys(o *Object, keep map[string]bool) *Object {
 type RuleSet struct {
 	id, version, checksum string
 	resolved              *Object
-	manifests             *Object // channel to manifest
+	manifests             *Object                 // channel to manifest
+	plans                 [2]atomic.Pointer[plan] // of the server and the client manifest
 }
 
 // ID returns the identifier of the ruleset.
@@ -794,7 +796,25 @@ func (rs *RuleSet) Channels() []string {
 
 func newRuleSet(resolved, manifests *Object) *RuleSet {
 	first := manifests.obj(manifests.names()[0])
-	return &RuleSet{first.str("id"), first.str("version"), first.str("checksum"), resolved, manifests}
+	rs := &RuleSet{id: first.str("id"), version: first.str("version"), checksum: first.str("checksum"),
+		resolved: resolved, manifests: manifests}
+	manifests.each(func(_ string, mf any) { rs.plan(asObj(mf)) })
+	return rs
+}
+
+// plan returns the plan of a manifest of the ruleset, planning it again when the manifest has
+// changed since: a rule added, removed or replaced, or a kind or priority changed.
+func (rs *RuleSet) plan(mf *Object) *plan {
+	slot := &rs.plans[0]
+	if mf.str("channel") == "client" {
+		slot = &rs.plans[1]
+	}
+	if p := slot.Load(); p.current(mf) {
+		return p
+	}
+	p := newPlan(mf)
+	slot.Store(p)
+	return p
 }
 
 // Load compiles a ruleset document: it validates it against the schema, resolves `extends` and
@@ -804,8 +824,12 @@ func newRuleSet(resolved, manifests *Object) *RuleSet {
 //
 // loader supplies the entity schemas for the path checks; with a nil loader PATH_UNKNOWN and
 // SCHEMA_REF_UNRESOLVED are not checked. A ruleset that fails a check is never returned: the
-// error is a *LoadError listing the problems.
+// error is a *LoadError listing the problems. Load, FromBundle and FromManifest all refuse every
+// ruleset while RULE_CASCADE_PATTERN_CACHE_SIZE has a value that is not a whole number of 0 or more.
 func Load(document any, registry map[string]any, loader SchemaLoader) (*RuleSet, error) {
+	if err := patternCacheProblem(); err != nil {
+		return nil, fmt.Errorf("rulecascade: %w", err)
+	}
 	doc, err := normalize(document)
 	if err != nil {
 		return nil, err
@@ -843,6 +867,9 @@ func usableManifest(mf *Object) bool {
 // the compiler already did them, which is what lets a runtime be a small evaluator. The error is
 // a *LoadError with code BUNDLE_UNSUPPORTED or BUNDLE_INVALID.
 func FromBundle(bundle any) (*RuleSet, error) {
+	if err := patternCacheProblem(); err != nil {
+		return nil, fmt.Errorf("rulecascade: %w", err)
+	}
 	b, err := normalize(bundle)
 	if err != nil {
 		return nil, err
@@ -865,6 +892,9 @@ func FromBundle(bundle any) (*RuleSet, error) {
 // ruleset then has that one channel: a client manifest cannot be evaluated as the server. The
 // error is a *LoadError with code MANIFEST_INVALID.
 func FromManifest(manifest any) (*RuleSet, error) {
+	if err := patternCacheProblem(); err != nil {
+		return nil, fmt.Errorf("rulecascade: %w", err)
+	}
 	m, err := normalize(manifest)
 	if err != nil {
 		return nil, err
@@ -880,7 +910,7 @@ func FromManifest(manifest any) (*RuleSet, error) {
 
 // Bundle returns the compiled, portable form of the ruleset: everything an evaluator needs, as
 // plain JSON. A ruleset read from one manifest gives a bundle with that one manifest, which
-// FromBundle does not accept.
+// FromBundle does not accept. The manifests are the ruleset's own, not copies (see Object).
 func (rs *RuleSet) Bundle() *Object {
 	b := NewObject()
 	b.Set("ruleCascadeBundle", BundleVersion)
@@ -893,7 +923,8 @@ func (rs *RuleSet) Bundle() *Object {
 
 // Manifest returns the manifest for a channel, "server" or "client". An empty channel is the
 // default one: the server's when the ruleset has it, otherwise the channel it has. The error says
-// when the ruleset has no manifest for the channel.
+// when the ruleset has no manifest for the channel. The manifest is the ruleset's own, not a copy
+// (see Object).
 func (rs *RuleSet) Manifest(channel string) (*Object, error) {
 	if channel == "" {
 		channel = rs.manifests.names()[0]

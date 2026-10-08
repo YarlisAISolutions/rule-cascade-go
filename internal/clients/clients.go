@@ -76,11 +76,52 @@ func Names() []string {
 	return out
 }
 
-// Server is the entry to write: the name and the command line that starts 'rcas mcp'.
+// Server is the entry to write: the name and the command line that starts 'rcas mcp', or the URL
+// of a server reached over Streamable HTTP (the hosted https://mcp.rulescascade.com/mcp, or
+// 'rcas mcp --http').
 type Server struct {
 	Name    string
 	Command string
 	Args    []string
+	URL     string
+}
+
+// Remote reports whether the entry is a URL rather than a command.
+func (s Server) Remote() bool { return s.URL != "" }
+
+// SupportsURL reports whether rcas knows the shape of a remote entry for the client. The shapes
+// follow each tool's documentation (October 2026; docs/agents.md has the sources).
+func SupportsURL(c Client) bool { return c.Name != "muse" }
+
+// remoteEntry is the entry of a server reached over Streamable HTTP, in the shape the client
+// expects: some need a type (and a missing one silently means stdio or SSE), others take the URL
+// alone, Gemini keeps it under httpUrl (url means SSE there) and Devin under serverUrl.
+func remoteEntry(c Client, s Server) *rulecascade.Object {
+	e := rulecascade.NewObject()
+	switch c.Name {
+	case "claude", "vscode", "factory", "augment", "amazonq":
+		e.Set("type", "http")
+	case "copilot-cli":
+		e.Set("type", "http")
+		e.Set("url", s.URL)
+		e.Set("tools", []any{"*"})
+		return e
+	case "cline":
+		e.Set("type", "streamableHttp")
+	case "opencode", "kilo":
+		e.Set("type", "remote")
+		e.Set("url", s.URL)
+		e.Set("enabled", true)
+		return e
+	case "gemini":
+		e.Set("httpUrl", s.URL)
+		return e
+	case "devin", "windsurf":
+		e.Set("serverUrl", s.URL)
+		return e
+	}
+	e.Set("url", s.URL)
+	return e
 }
 
 // Target says where a client's configuration is and what it should contain.
@@ -192,6 +233,9 @@ func Write(t *Target) error {
 
 // entry is the server entry of a JSON configuration, in the shape the client expects.
 func entry(c Client, s Server) *rulecascade.Object {
+	if s.Remote() {
+		return remoteEntry(c, s)
+	}
 	e := rulecascade.NewObject()
 	args := make([]any, len(s.Args))
 	for i, a := range s.Args {
@@ -285,6 +329,9 @@ func mergeTOML(before []byte, key string, s Server, force bool) (after []byte, e
 		quotedArgs[i] = tomlString(a)
 	}
 	table := fmt.Sprintf("[%s.%s]\ncommand = %s\nargs = [%s]\n", key, tomlKey(s.Name), tomlString(s.Command), strings.Join(quotedArgs, ", "))
+	if s.Remote() {
+		table = fmt.Sprintf("[%s.%s]\nurl = %s\n", key, tomlKey(s.Name), tomlString(s.URL))
+	}
 	text := strings.ReplaceAll(string(before), "\r\n", "\n")
 	lines := strings.Split(text, "\n")
 	start, end := -1, len(lines)
@@ -377,6 +424,19 @@ func Snippet(c Client, s Server) string {
 
 // CLIArgs is the command line of the client's own CLI that registers the server, when it has one.
 func CLIArgs(c Client, scope string, s Server) []string {
+	if s.Remote() {
+		switch c.Name {
+		case "claude":
+			return []string{"claude", "mcp", "add", "--transport", "http", "-s", scope, s.Name, s.URL}
+		case "codex":
+			return []string{"codex", "mcp", "add", s.Name, "--url", s.URL}
+		case "gemini":
+			return []string{"gemini", "mcp", "add", "--transport", "http", "-s", scope, s.Name, s.URL}
+		case "copilot-cli":
+			return []string{"copilot", "mcp", "add", "--transport", "http", s.Name, s.URL}
+		}
+		return nil
+	}
 	switch c.Name {
 	case "claude":
 		return append([]string{"claude", "mcp", "add", "-s", scope, s.Name, "--", s.Command}, s.Args...)

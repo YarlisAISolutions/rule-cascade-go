@@ -1217,3 +1217,18 @@ func TestPlainGoValues(t *testing.T) {
 		t.Errorf("skipped %q", result.Skipped)
 	}
 }
+
+// Nested aliases cannot make a short document expand without end.
+func TestYAMLAliasBudget(t *testing.T) {
+	bomb := "a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n"
+	for i := 1; i <= 9; i++ {
+		refs := strings.TrimSuffix(strings.Repeat(fmt.Sprintf("*a%d, ", i-1), 10), ", ")
+		bomb += fmt.Sprintf("a%d: &a%d [%s]\n", i, i, refs)
+	}
+	if _, err := parseYAML([]byte(bomb)); err == nil || !strings.Contains(err.Error(), "expand too much") {
+		t.Fatalf("an alias bomb: %v", err)
+	}
+	if _, err := parseYAML([]byte("base: &b {x: 1}\none: *b\ntwo: *b\n")); err != nil {
+		t.Errorf("a few aliases: %v", err)
+	}
+}

@@ -206,17 +206,43 @@ func setPointer(data *Object, pointer string, value any) {
 }
 
 // localeChain lists the catalogs to consult, least specific first: the default locale, then every
-// prefix of the requested tag. fr-CA reads en, fr, fr-CA, so a regional catalog only needs the
-// messages that differ. Tags are compared exactly, including case.
-func localeChain(defaultLocale, wanted string) []string {
+// prefix of the requested tag that ends at a subtag. fr-CA reads en, fr, fr-CA, so a regional
+// catalog only needs the messages that differ. Tags are compared exactly, including case.
+//
+// Prefixes longer than longest bytes are left out: given the length of the longest catalog tag,
+// which no longer prefix can equal, the work no longer grows with the length of wanted. A negative
+// longest leaves none out.
+func localeChain(defaultLocale, wanted string, longest int) []string {
 	chain := []string{defaultLocale}
-	if wanted != "" {
-		parts := strings.Split(wanted, "-")
-		for i := 1; i <= len(parts); i++ {
-			chain = append(chain, strings.Join(parts[:i], "-"))
+	if wanted == "" {
+		return chain
+	}
+	limit := len(wanted)
+	if longest >= 0 && longest < limit {
+		limit = longest
+	}
+	// a prefix that ends before the hyphen at index i is i long
+	for i := 0; i <= limit; i++ {
+		next := strings.IndexByte(wanted[i:], '-')
+		if next < 0 || i+next > limit {
+			break
 		}
+		i += next
+		chain = append(chain, wanted[:i])
+	}
+	if len(wanted) <= limit {
+		chain = append(chain, wanted)
 	}
 	return chain
+}
+
+// longestTag is the length of the longest catalog tag: a longer tag cannot name a catalog.
+func longestTag(messages *Object) int {
+	longest := 0
+	for _, tag := range messages.names() {
+		longest = max(longest, len(tag))
+	}
+	return longest
 }
 
 // requestProblem says why a value is not an evaluation request, or returns "". It is checked
@@ -296,10 +322,81 @@ func (rs *RuleSet) Evaluate(request any, channel string, operators Operators) (*
 	if err != nil {
 		return nil, err
 	}
-	return evaluate(mf, req, operators)
+	return evaluateWith(mf, rs.plan(mf), req, operators)
+}
+
+// plan is the rules of a manifest grouped by kind, each group sorted by priority (stable: equal
+// priorities keep document order). Selecting from a sorted group gives the same order as sorting
+// the selection, because a stable sort commutes with filtering. A plan remembers what it was built
+// from, so that a manifest changed after load is planned again rather than evaluated stale.
+type plan struct {
+	manifest   *Object
+	rules      []any     // the manifest's list of rules
+	objects    []*Object // each rule, in document order
+	kinds      []string  // the kind of each rule when the plan was built
+	priorities []any     // the priority of each rule: a number, or nil for none
+	byKind     map[string][]*Object
+}
+
+// planPriority is the priority a rule is ordered by: a number, or nil when it has none. Both are
+// comparable with ==.
+func planPriority(r *Object) any {
+	if v := r.get("priority"); isNum(v) {
+		return v
+	}
+	return nil
+}
+
+func newPlan(mf *Object) *plan {
+	rules := mf.list("rules")
+	p := &plan{manifest: mf, rules: rules, objects: make([]*Object, len(rules)), kinds: make([]string, len(rules)),
+		priorities: make([]any, len(rules)), byKind: map[string][]*Object{}}
+	type ranked struct {
+		rule *Object
+		p    decimal
+	}
+	groups := map[string][]ranked{}
+	for i, x := range rules {
+		if r := asObj(x); r != nil {
+			p.objects[i], p.kinds[i], p.priorities[i] = r, r.str("kind"), planPriority(r)
+			groups[p.kinds[i]] = append(groups[p.kinds[i]], ranked{r, dec(p.priorities[i])})
+		}
+	}
+	for kind, g := range groups {
+		sort.SliceStable(g, func(i, j int) bool { return g[i].p.cmp(g[j].p) > 0 })
+		rules := make([]*Object, len(g))
+		for i := range g {
+			rules[i] = g[i].rule
+		}
+		p.byKind[kind] = rules
+	}
+	return p
+}
+
+// current reports whether the plan still describes mf: the same list of rules, and every rule the
+// same object with the same kind and priority. Everything else a rule says is read when it runs.
+func (p *plan) current(mf *Object) bool {
+	if p == nil || p.manifest != mf {
+		return false
+	}
+	rules := mf.list("rules")
+	if len(rules) != len(p.rules) || (len(rules) > 0 && &rules[0] != &p.rules[0]) {
+		return false
+	}
+	for i, x := range rules {
+		r := asObj(x)
+		if r != p.objects[i] || (r != nil && (r.str("kind") != p.kinds[i] || planPriority(r) != p.priorities[i])) {
+			return false
+		}
+	}
+	return true
 }
 
 func evaluate(mf *Object, req any, operators Operators) (*Result, error) {
+	return evaluateWith(mf, nil, req, operators)
+}
+
+func evaluateWith(mf *Object, rulePlan *plan, req any, operators Operators) (*Result, error) {
 	if why := requestProblem(req); why != "" {
 		return nil, &RequestError{why}
 	}
@@ -353,17 +450,20 @@ func evaluate(mf *Object, req any, operators Operators) (*Result, error) {
 		}
 		return true
 	}
-	var rules []*Object
-	for _, x := range mf.list("rules") {
-		if r := asObj(x); r != nil && selected(r) {
-			rules = append(rules, r)
-		}
+	if !rulePlan.current(mf) {
+		rulePlan = newPlan(mf)
 	}
 
 	// Catalogs are consulted from most to least specific: fr-CA, then fr, then the default locale.
 	messages := mf.obj("messages")
 	defaultLocale, _ := orDefault(mf, "defaultLocale", "en").(string)
-	locales := localeChain(defaultLocale, request.str("locale"))
+	// a tag longer than every catalog's tag cannot name one: a long locale costs no more than a short one
+	wantedLocale := request.str("locale")
+	longest := 0
+	if wantedLocale != "" {
+		longest = longestTag(messages)
+	}
+	locales := localeChain(defaultLocale, wantedLocale, longest)
 	template := func(key string) string {
 		for i := len(locales) - 1; i >= 0; i-- {
 			if t, ok := messages.obj(locales[i]).get(key).(string); ok {
@@ -400,14 +500,13 @@ func evaluate(mf *Object, req any, operators Operators) (*Result, error) {
 		}
 		return decimalZero
 	}
-	ofKind := func(kind string) []*Object { // stable: equal priorities keep document order
+	ofKind := func(kind string) []*Object { // by priority, then document order
 		var out []*Object
-		for _, r := range rules {
-			if r.str("kind") == kind {
+		for _, r := range rulePlan.byKind[kind] {
+			if selected(r) {
 				out = append(out, r)
 			}
 		}
-		sort.SliceStable(out, func(i, j int) bool { return priority(out[i]).cmp(priority(out[j])) > 0 })
 		return out
 	}
 	// conflict is called when a second rule sets the same thing to a different value. It returns

@@ -2,7 +2,9 @@ package rulecascade
 
 import (
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -210,17 +212,101 @@ func quantifier(p []rune, i int) (end, low, high int, ok bool) {
 	return i + 1, low, high, true
 }
 
+// DefaultPatternCacheSize is how many compiled `matches` patterns the process keeps when neither
+// SetPatternCacheSize nor the RULE_CASCADE_PATTERN_CACHE_SIZE environment variable says otherwise.
+// Patterns are literals in a ruleset, so this is far more than one needs; the limit only bounds
+// hostile input. Results never depend on it.
+const DefaultPatternCacheSize = 2048
+
+const patternCacheVariable = "RULE_CASCADE_PATTERN_CACHE_SIZE"
+
+// patterns caches compiled patterns. It is emptied when full and when its size shrinks.
 var patterns = struct {
 	sync.Mutex
 	compiled map[string]*regexp.Regexp
+	size     int  // the size given to SetPatternCacheSize
+	set      bool // whether SetPatternCacheSize was called
 }{compiled: map[string]*regexp.Regexp{}}
+
+// The environment variable is read once, on first use. lookupEnv is replaced by tests.
+var (
+	lookupEnv         = os.LookupEnv
+	patternEnvOnce    sync.Once
+	patternEnvSize    int
+	patternEnvFailure error
+)
+
+// cacheSizeError says that a cache size is not a whole number of 0 or more. what names the
+// setting, and the value too when it comes from code; a value from the environment is never
+// repeated, since one pasted by mistake could be a secret and errors reach callers.
+func cacheSizeError(what string) error {
+	return fmt.Errorf("%s: expected a whole number, 0 or more (0 turns the cache off)", what)
+}
+
+// patternCacheFromEnv is the size the environment variable sets, the default when it is not set,
+// or why its value is refused. A refused value is never replaced by the default.
+func patternCacheFromEnv() (int, error) {
+	patternEnvOnce.Do(func() {
+		patternEnvSize = DefaultPatternCacheSize
+		if value, ok := lookupEnv(patternCacheVariable); ok {
+			n, err := strconv.Atoi(value)
+			if !isDigits(value) || len(value) > 19 || err != nil {
+				patternEnvSize, patternEnvFailure = 0, cacheSizeError(patternCacheVariable+" is not valid")
+			} else {
+				patternEnvSize = n
+			}
+		}
+	})
+	return patternEnvSize, patternEnvFailure
+}
+
+// patternCacheSizeLocked is the size in force: the setter's, else the environment variable's, else
+// the default. The caller holds patterns.
+func patternCacheSizeLocked() (int, error) {
+	if patterns.set {
+		return patterns.size, nil
+	}
+	return patternCacheFromEnv()
+}
+
+// patternCacheProblem reports a refused RULE_CASCADE_PATTERN_CACHE_SIZE. Loading a ruleset checks
+// it first, so a misconfigured process refuses every ruleset instead of failing later.
+func patternCacheProblem() error {
+	patterns.Lock()
+	defer patterns.Unlock()
+	_, err := patternCacheSizeLocked()
+	return err
+}
+
+// SetPatternCacheSize sets how many compiled `matches` patterns the process keeps, over the
+// RULE_CASCADE_PATTERN_CACHE_SIZE environment variable and DefaultPatternCacheSize. 0 turns the
+// cache off; a smaller size empties it. A negative size is refused. It is safe to call while other
+// goroutines evaluate, and results never depend on it.
+func SetPatternCacheSize(n int) error {
+	if n < 0 {
+		return cacheSizeError("the pattern cache size is " + strconv.Itoa(n))
+	}
+	patterns.Lock()
+	defer patterns.Unlock()
+	old, err := patternCacheSizeLocked()
+	if err != nil || n < old || len(patterns.compiled) > n {
+		patterns.compiled = map[string]*regexp.Regexp{}
+	}
+	patterns.size, patterns.set = n, true
+	return nil
+}
 
 // compilePattern returns the matcher for a portable pattern. Go's RE2 already gives the portable
 // meaning to everything in the subset once '.' is made to match line breaks: \d and \w are ASCII,
-// and without the m flag '^' and '$' match only at the very start and the very end.
+// and without the m flag '^' and '$' match only at the very start and the very end. It fails when
+// RULE_CASCADE_PATTERN_CACHE_SIZE is refused, which fails the rule closed.
 func compilePattern(pattern string) (*regexp.Regexp, error) {
 	patterns.Lock()
 	defer patterns.Unlock()
+	limit, err := patternCacheSizeLocked()
+	if err != nil {
+		return nil, err
+	}
 	if re, ok := patterns.compiled[pattern]; ok {
 		return re, nil
 	}
@@ -231,9 +317,11 @@ func compilePattern(pattern string) (*regexp.Regexp, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pattern %q: %v", pattern, err)
 	}
-	if len(patterns.compiled) >= 1024 { // patterns are literals in a ruleset; this only bounds misuse
-		patterns.compiled = map[string]*regexp.Regexp{}
+	if limit > 0 {
+		if len(patterns.compiled) >= limit { // patterns are literals in a ruleset; this only bounds misuse
+			patterns.compiled = map[string]*regexp.Regexp{}
+		}
+		patterns.compiled[pattern] = re
 	}
-	patterns.compiled[pattern] = re
 	return re, nil
 }

@@ -6,8 +6,10 @@ import (
 	"errors"
 	"math"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func mustParse(t *testing.T, text string) any {
@@ -640,7 +642,80 @@ func TestLocaleFallback(t *testing.T) {
 			t.Errorf("locale %q: %s, want %s", locale, got, want)
 		}
 	}
-	if got := strings.Join(localeChain("en", "fr-CA-x-a"), " "); got != "en fr fr-CA fr-CA-x fr-CA-x-a" {
+	if got := strings.Join(localeChain("en", "fr-CA-x-a", -1), " "); got != "en fr fr-CA fr-CA-x fr-CA-x-a" {
 		t.Errorf("localeChain: %s", got)
+	}
+	if got := strings.Join(localeChain("en", "fr-CA-x-a", 5), " "); got != "en fr fr-CA" {
+		t.Errorf("localeChain bounded: %s", got)
+	}
+
+	// A 1 MB locale costs no more than a short one: before, the chain held every prefix of it.
+	short := map[string]any{"entity": "Thing", "operation": "create", "locale": "fr-CA-y"}
+	want, _ := rs.Evaluate(short, "server", nil)
+	for _, locale := range []string{"fr-CA-" + strings.Repeat("a-", 500_000), "fr-CA-" + strings.Repeat("a", 1_000_000), strings.Repeat("-", 1_000_000)} {
+		long := map[string]any{"entity": "Thing", "operation": "create", "locale": locale}
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		started := time.Now()
+		got, err := rs.Evaluate(long, "server", nil)
+		elapsed := time.Since(started)
+		runtime.ReadMemStats(&after)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if elapsed > time.Second {
+			t.Errorf("a %d-byte locale took %v", len(locale), elapsed)
+		}
+		if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 1<<20 {
+			t.Errorf("a %d-byte locale allocated %d bytes", len(locale), allocated)
+		}
+		expected := want.Findings
+		if locale[0] == '-' {
+			none, _ := rs.Evaluate(map[string]any{"entity": "Thing", "operation": "create"}, "server", nil)
+			expected = none.Findings
+		}
+		for i := range expected {
+			if got.Findings[i].Message != expected[i].Message {
+				t.Errorf("a %d-byte locale: %q, want %q", len(locale), got.Findings[i].Message, expected[i].Message)
+			}
+		}
+	}
+}
+
+// The bounded chain is the full chain without the prefixes longer than the bound, for every tag of
+// up to 7 characters from 'a', 'b' and '-' and every bound.
+func TestLocaleChainBound(t *testing.T) {
+	naive := func(wanted string) []string {
+		chain := []string{"en"}
+		if wanted != "" {
+			parts := strings.Split(wanted, "-")
+			for i := 1; i <= len(parts); i++ {
+				chain = append(chain, strings.Join(parts[:i], "-"))
+			}
+		}
+		return chain
+	}
+	tags := []string{""}
+	for start := 0; start < len(tags); start++ {
+		if len(tags[start]) < 7 {
+			tags = append(tags, tags[start]+"a", tags[start]+"b", tags[start]+"-")
+		}
+	}
+	for _, tag := range tags {
+		full := naive(tag)
+		if got := localeChain("en", tag, -1); strings.Join(got, "|") != strings.Join(full, "|") || len(got) != len(full) {
+			t.Fatalf("%q: %q, want %q", tag, got, full)
+		}
+		for longest := 0; longest <= 8; longest++ {
+			want := []string{"en"}
+			for _, prefix := range full[1:] {
+				if len(prefix) <= longest {
+					want = append(want, prefix)
+				}
+			}
+			if got := localeChain("en", tag, longest); strings.Join(got, "|") != strings.Join(want, "|") || len(got) != len(want) {
+				t.Fatalf("%q bounded by %d: %q, want %q", tag, longest, got, want)
+			}
+		}
 	}
 }

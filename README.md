@@ -269,6 +269,22 @@ The JSON body is the entity by default and stays readable for the handler. `rule
 err)` answers a `*RuleViolation` (422) or a `*RequestError` (400) in handlers that call `Enforce`
 themselves. Walkthrough: https://rulescascade.com/get-started/first-app/
 
+### Caches
+
+The process keeps the compiled patterns of `matches`; results never depend on it. The cache holds up
+to `rulecascade.DefaultPatternCacheSize` (2048) patterns and is emptied when full. Patterns are
+literals in a ruleset, so the limit only bounds hostile input.
+
+| Setting | Wins over |
+|---|---|
+| `rulecascade.SetPatternCacheSize(n)` | the environment variable and the default |
+| `RULE_CASCADE_PATTERN_CACHE_SIZE`, read once on first use | the default |
+
+A size is a whole number, 0 or more; 0 turns the cache off and a smaller size empties it. The setter
+returns an error for a negative size and may be called while other goroutines evaluate. Any other
+value of the variable is never replaced by the default: `Load`, `FromBundle` and `FromManifest`
+refuse every ruleset with an error that names it, and `matches` fails closed.
+
 ## Command
 
 Build it from this directory:
@@ -279,7 +295,7 @@ dist/rcas version
 ```
 
 ```text
-rcas 1.0.0-alpha.7 (specification 1.0.0, bundle format 1.0.0)
+rcas 1.0.0-alpha.8 (specification 1.0.0, bundle format 1.0.0)
 ```
 
 | Command | Does |
@@ -397,7 +413,7 @@ printf '%s\n' '{"id":1,"command":"version"}' '{"id":2,"command":"expression","ex
 ```
 
 ```text
-{"id":1,"ok":true,"result":{"engine":"rule-cascade-go","engineVersion":"1.0.0-alpha.7","ruleCascade":"1.0.0","bundle":"1.0.0","levels":["evaluator","compiler"],"operators":[]}}
+{"id":1,"ok":true,"result":{"engine":"rule-cascade-go","engineVersion":"1.0.0-alpha.8","ruleCascade":"1.0.0","bundle":"1.0.0","levels":["evaluator","compiler"],"operators":[]}}
 {"id":2,"ok":true,"result":0.3}
 ```
 

@@ -172,6 +172,23 @@ func sameReading(a, b reading) bool {
 
 type yamlReader struct {
 	problems []rulecascade.Problem
+	// budget is how many more nodes may be read: aliases repeat what they point to, and a short
+	// document of nested aliases would otherwise expand without end.
+	budget int
+}
+
+// aliasBudget is how many nodes a document may expand to: ten times the nodes it is written with.
+func aliasBudget(document *yaml.Node) int {
+	return 10*countNodes(document) + 1000
+}
+
+// countNodes counts the nodes of a document as written, without following aliases.
+func countNodes(node *yaml.Node) int {
+	n := 1
+	for _, child := range node.Content {
+		n += countNodes(child)
+	}
+	return n
 }
 
 func (r *yamlReader) report(format string, args ...any) {
@@ -199,11 +216,15 @@ func parseYAML(data []byte) (any, []rulecascade.Problem, error) {
 	} else if err != io.EOF {
 		return nil, nil, err
 	}
+	r.budget = aliasBudget(&document)
 	value, err := r.value(&document)
 	return value, r.problems, err
 }
 
 func (r *yamlReader) value(node *yaml.Node) (any, error) {
+	if r.budget--; r.budget < 0 {
+		return nil, fmt.Errorf("line %d: the aliases of the document expand too much", node.Line)
+	}
 	if node.Anchor != "" {
 		r.report("line %d: anchors are not allowed in a ruleset", node.Line)
 	}
