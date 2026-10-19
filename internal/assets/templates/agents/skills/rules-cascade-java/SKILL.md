@@ -40,7 +40,8 @@ class RuleErrors {
 
 For an annotation on controller methods, copy `@EnforceRules` and `RuleEnforcementAspect` from the
 Spring Boot example (https://rulescascade.com/reference/examples/backend-spring-boot/); it needs
-`spring-boot-starter-aop`. Every state-changing endpoint follows four steps:
+`spring-boot-starter-aspectj` (`spring-boot-starter-aop` before Spring Boot 4). Every state-changing
+endpoint follows four steps:
 
 1. **Evaluate on the server**:
    `rules.evaluate(EvaluationRequest.builder(entity, operation).data(data).original(original).actor(...).build(), Channel.SERVER)`.
@@ -58,7 +59,10 @@ request; Quarkus/Micronaut a `@Singleton` producer. Kotlin and Scala call the sa
 
 ## Replacing existing validation
 
-`rcas analyze` lists Bean Validation annotations and hand-written checks. Keep `@NotNull`/`@Size` type
+`rcas analyze --module <module>` lists Bean Validation annotations, Spring validators and
+`@PreAuthorize`, Drools `.drl` rules, hand-written checks, named limits (`MAX_QUANTITY = 10`),
+comparisons with numbers and `switch` branches on a status. A candidate with `drift` means the same
+name has another value in the front end: one ruleset must decide it for both. Keep `@NotNull`/`@Size` type
 checks on the DTO if you like; move business decisions to rules. Add a parity test (JUnit
 `@ParameterizedTest` over the same inputs for the old check and the engine), then delete the old check.
 

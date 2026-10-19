@@ -28,6 +28,12 @@ func Roles() []string {
 	return list("templates/agents/roles", false)
 }
 
+// Commands lists the reusable prompts (slash commands, prompt files, workflows), by file name:
+// templates/agents/commands/<name>.md, converted for each tool.
+func Commands() []string {
+	return list("templates/agents/commands", false)
+}
+
 // Skills lists the skills, by name: templates/agents/skills/<name>/SKILL.md.
 func Skills() []string {
 	return list("templates/agents/skills", true)

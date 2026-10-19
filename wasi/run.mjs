@@ -6,6 +6,7 @@
 // Standard input, output and error are those of this process, and the exit status is the
 // module's. The module sees the host file system from the root of the current drive, with the
 // current directory as its working directory, so relative paths mean what they mean in a shell.
+// Of this process's environment it sees only the engine's own settings, the RULE_CASCADE_* variables.
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -21,12 +22,15 @@ process.emitWarning = (warning, ...rest) =>
   String(warning).includes('WASI') ? undefined : emitWarning.call(process, warning, ...rest);
 const { WASI } = await import('node:wasi');
 
+const settings = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => name.startsWith('RULE_CASCADE_')),
+);
 const cwd = process.cwd();
 const root = path.parse(cwd).root;
 const wasi = new WASI({
   version: 'preview1',
   args: [path.basename(file), ...args],
-  env: { PWD: '/' + path.relative(root, cwd).split(path.sep).join('/') },
+  env: { ...settings, PWD: '/' + path.relative(root, cwd).split(path.sep).join('/') },
   preopens: { '/': root },
   returnOnExit: true,
 });

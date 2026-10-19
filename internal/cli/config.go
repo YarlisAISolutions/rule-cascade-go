@@ -38,9 +38,14 @@ type Config struct {
 		JSONSchema []SchemaSource `json:"jsonSchema"`
 	} `json:"sources"`
 	Analyze struct {
-		Include  []string `json:"include"`
-		Exclude  []string `json:"exclude"`
-		MaxFiles int      `json:"maxFiles"`
+		Include       []string `json:"include"`
+		Exclude       []string `json:"exclude"`
+		MaxFiles      int      `json:"maxFiles"`
+		MaxHits       int      `json:"maxHits"`
+		MinConfidence *float64 `json:"minConfidence"`
+		Baseline      string   `json:"baseline"` // fingerprints of reviewed hits, relative to this file
+		// Features names sets of globs, so 'analyze --feature <name>' scans one feature across modules.
+		Features map[string][]string `json:"features"`
 	} `json:"analyze"`
 	MCP struct {
 		ReadOnly bool `json:"readOnly"`
@@ -180,6 +185,17 @@ func readConfig(path string) (*Config, error) {
 	for _, tool := range cfg.Agents.Tools {
 		if _, ok := findAgentTool(tool); !ok {
 			return nil, fmt.Errorf("%s: unknown agent tool %q (%s)", path, tool, strings.Join(agentToolNames(), ", "))
+		}
+	}
+	if cfg.Analyze.MaxFiles < 0 || cfg.Analyze.MaxHits < 0 {
+		return nil, fmt.Errorf("%s: analyze.maxFiles and analyze.maxHits are positive numbers", path)
+	}
+	if m := cfg.Analyze.MinConfidence; m != nil && (*m < 0 || *m > 1) {
+		return nil, fmt.Errorf("%s: analyze.minConfidence is between 0 and 1, not %v", path, *m)
+	}
+	for name, globs := range cfg.Analyze.Features {
+		if len(globs) == 0 {
+			return nil, fmt.Errorf("%s: analyze.features.%s lists no paths", path, name)
 		}
 	}
 	cfg.Path, _ = filepath.Abs(path)

@@ -792,29 +792,56 @@ func (c *cli) mcpServer(opts mcpOptions) *mcp.Server {
 		}})
 
 	add(mcp.Tool{Name: "analyze", ReadOnly: true,
-		Description: "Inventory an existing code base: API schemas (OpenAPI, JSON Schema) and validation code (Zod, Joi, class-validator, Pydantic, marshmallow, Bean Validation, Go validate tags, FluentValidation, Rails validates, hand-written if/throw checks) with file:line. Each hit is a candidate rule; read the code around it.",
+		Description: "Inventory an existing code base: API schemas (OpenAPI, JSON Schema) and decisions in code in every supported language (TypeScript, JavaScript, Python, Java, Kotlin, Scala, Go, C#, Ruby, PHP, Rust, Swift, Dart, C, C++): validation libraries, authorization, rule engines (Drools, DMN ...), hand-written checks, named limits, comparisons with numbers, status branches, and conditions in React, Angular, Vue, Svelte, Blazor, SwiftUI, Compose and Flutter user interfaces with file:line, module, confidence, and what each line compares. Candidates list the same name compared in several languages (a backend and a front end), with drift when the values differ; coveredBy names a project ruleset that already uses the name. Each hit is a candidate rule; read the code around it.",
 		InputSchema: schema(nil, map[string]any{"path": str("Directory or file, relative to the project. Default: the project."),
+			"paths":   strs("Several directories or files, relative to the project."),
+			"module":  strs("Only these modules: a directory with a build file (pom.xml, build.gradle, package.json, go.mod, *.csproj, Cargo.toml, composer.json, Gemfile, Package.swift, pubspec.yaml ...), by path or name."),
+			"feature": strs("Only these features: names of analyze.features in rcas.yaml."),
 			"include": strs("Glob patterns to include."), "exclude": strs("Glob patterns to exclude."),
-			"max_files": map[string]any{"type": "integer", "description": "Stop after this many files (default 20000)."}}),
+			"changed":        str("A git ref: only the files changed since the merge base with it."),
+			"baseline":       str("A baseline file written by 'rcas analyze --write-baseline', relative to the project: its hits are left out."),
+			"min_confidence": map[string]any{"type": "number", "minimum": 0, "maximum": 1, "description": "Leave out hits below this confidence."},
+			"max_files":      map[string]any{"type": "integer", "description": "Stop after this many files (default 20000)."}}),
 		Call: func(args map[string]any) (any, error) {
 			q, done, err := open(args)
 			if err != nil {
 				return nil, err
 			}
 			defer done()
-			path := argString(args, "path")
-			if path == "" {
-				path = "."
+			paths := argStrings(args, "paths")
+			if p := argString(args, "path"); p != "" {
+				paths = append(paths, p)
 			}
-			files, err := q.projectFiles([]string{path})
+			if len(paths) == 0 {
+				paths = []string{"."}
+			}
+			files, err := q.projectFiles(paths)
 			if err != nil {
 				return nil, err
 			}
-			max := 0
+			req := analyzeRequest{Paths: files, Include: argStrings(args, "include"), Exclude: argStrings(args, "exclude"),
+				Modules: argStrings(args, "module"), Features: argStrings(args, "feature"), Changed: argString(args, "changed")}
 			if f, ok := args["max_files"].(float64); ok {
-				max = int(f)
+				req.MaxFiles = int(f)
 			}
-			return toAny(q.analyze(files[0], argStrings(args, "include"), argStrings(args, "exclude"), max))
+			if f, ok := args["min_confidence"].(float64); ok {
+				if f < 0 || f > 1 {
+					return nil, errors.New("min_confidence is between 0 and 1")
+				}
+				req.MinConfidence = &f
+			}
+			if b := argString(args, "baseline"); b != "" {
+				resolved, err := q.projectFiles([]string{b})
+				if err != nil {
+					return nil, err
+				}
+				req.Baseline = resolved[0]
+			}
+			report, err := q.analyze(req)
+			if err != nil {
+				return nil, err
+			}
+			return toAny(report)
 		}})
 
 	if !readOnly {
@@ -1023,16 +1050,24 @@ func (c *cli) mcpServer(opts mcpOptions) *mcp.Server {
 					", then read get_authoring_guide topic openapi, add what the schema cannot say (cross-field rules, messages, golden tests), run check until it reports ok, and " + where + ".", nil
 			}})
 		s.AddPrompt(mcp.Prompt{Name: "capture-rules", Title: "Capture the business rules in this code",
-			Description: "Find the validation and decision code of the project and turn it into rulesets for review.",
-			Arguments:   []mcp.PromptArgument{{Name: "path", Description: "A directory or file to start from (default: the whole project)"}},
+			Description: "Find the validation and decision code of the project, a module or a feature, and turn it into rulesets for review.",
+			Arguments: []mcp.PromptArgument{{Name: "path", Description: "A directory or file to start from (default: the whole project)"},
+				{Name: "module", Description: "A module to scan, by path or name (a directory with pom.xml, package.json ...)"},
+				{Name: "feature", Description: "A feature to scan, as named in analyze.features of rcas.yaml"}},
 			Get: func(a map[string]string) (string, error) {
-				path := a["path"]
-				if path == "" {
-					path = "the project"
+				scope := "the project"
+				switch {
+				case a["module"] != "":
+					scope = "module " + a["module"] + " (argument module)"
+				case a["feature"] != "":
+					scope = "feature " + a["feature"] + " (argument feature)"
+				case a["path"] != "":
+					scope = a["path"]
 				}
-				return "Call analyze on " + path + " and read the code around each hit. Read get_authoring_guide topic authoring and topic naming. " +
-					"Write one ruleset per entity with a golden test for each rule, run check until it reports ok, then " + where + ". " +
-					"List the decisions you left out and why.", nil
+				return "Call analyze on " + scope + " and read the code around each hit. Read get_authoring_guide topic authoring and topic naming. " +
+					"For each candidate decided in several languages, compare the values; with drift, say which is right or ask. Skip what coveredBy shows a ruleset already decides. " +
+					"Write one ruleset per module for what its features share and one per feature that extends it, in the same directory, with a golden test for each rule; " +
+					"run check until it reports ok, then " + where + ". List the decisions you left out and why.", nil
 			}})
 	}
 	s.AddPrompt(mcp.Prompt{Name: "review-ruleset", Title: "Review a ruleset",

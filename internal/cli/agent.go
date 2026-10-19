@@ -21,24 +21,29 @@ Every install writes the portable part, which most tools read as it is:
 
   AGENTS.md                        a managed block (the rest of the file is kept)
   .agents/skills/<skill>/SKILL.md  the skills (the Agent Skills format): rules-cascade, -review,
-                                   -migrate, and one per language of the project
+                                   -migrate, -capture, and one per language of the project
 
-and, for each chosen tool, the files it needs on top ('{program} agent list' shows them all):
+and, for each chosen tool, what it needs on top, in its own format: instructions scoped to the
+rulesets and to the application code of the project's languages, the commands /rcas-capture and
+/rcas-review, and the sub-agents rcas-analyst, -author, -reviewer and -tester with only the tools
+their role needs ('{program} agent list' shows every file):
 
-  claude    CLAUDE.md (imports AGENTS.md), .claude/skills/, .claude/agents/rcas-*.md
-  codex     .codex/agents/rcas-*.toml
-  copilot   .github/instructions/rules-cascade.instructions.md, .github/agents/rcas-*.agent.md
-  cursor    .cursor/rules/rules-cascade.mdc, .cursor/agents/rcas-*.md
-  gemini    GEMINI.md (a managed block)
-  kiro      .kiro/steering/rules-cascade.md, .kiro/skills/
-  devin     .devin/rules/rules-cascade.md (Devin Desktop and Devin CLI, formerly Windsurf)
-  junie     .junie/agents/rcas-*.md
-  cline     .clinerules/rules-cascade.md, .cline/skills/
-  opencode  .opencode/agents/rcas-*.md
-  factory   .factory/droids/rcas-*.md
+  claude    CLAUDE.md, .claude/skills/, .claude/agents/, .claude/commands/, .claude/rules/
+  codex     .codex/agents/rcas-*.toml (commands: the skills)
+  copilot   .github/instructions/, .github/prompts/rcas-*.prompt.md, .github/agents/rcas-*.agent.md
+  cursor    .cursor/rules/rules-cascade.mdc and rules-cascade-code.mdc, .cursor/agents/
+  gemini    GEMINI.md (a managed block), .gemini/commands/rcas-*.toml, .gemini/agents/
+  kiro      .kiro/steering/ (rulesets and code), .kiro/skills/, .kiro/agents/
+  devin     .devin/rules/ (rulesets and code), .devin/workflows/ (formerly Windsurf)
+  junie     .junie/agents/, .junie/commands/
+  cline     .clinerules/ (rulesets and code), .cline/skills/
+  opencode  .opencode/agents/, .opencode/commands/
+  factory   .factory/droids/, .factory/commands/
   amazonq   .amazonq/rules/rules-cascade.md
-  tabnine   .tabnine/guidelines/rules-cascade.md
-  muse, amp, goose, warp, zed, kilo, augment   AGENTS.md and .agents/skills/ only
+  tabnine   .tabnine/guidelines/rules-cascade.md, .tabnine/agent/commands/rcas-*.toml
+  kilo      .kilo/commands/
+  augment   .augment/agents/, .augment/commands/ (unless claude: Auggie reads .claude/commands)
+  muse, amp, goose, warp, zed   AGENTS.md and .agents/skills/ only
 
 --for takes a comma-separated list, or all. Without it: agents.tools in rcas.yaml, else the tools
 the project already shows signs of (a .cursor/ folder, CLAUDE.md, .kiro/ ...).
@@ -254,6 +259,87 @@ func yamlString(s string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
 
+// codeGlobs are the application files of each language, for instructions that apply to code.
+var codeGlobs = map[string][]string{
+	"ts":     {"**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.component.html"},
+	"java":   {"**/*.java", "**/*.kt", "**/*.kts", "**/*.scala"},
+	"python": {"**/*.py"},
+	"go":     {"**/*.go"},
+	// the languages that evaluate through rcas engine or rcas.wasm
+	"other": {"**/*.cs", "**/*.razor", "**/*.cshtml", "**/*.rs", "**/*.php", "**/*.rb", "**/*.swift", "**/*.dart",
+		"**/*.c", "**/*.cc", "**/*.cpp", "**/*.h", "**/*.hpp"},
+}
+
+// copilotTools are the tools a Copilot custom agent may use: VS Code tool sets and the rules-cascade
+// MCP server. Roles that change nothing get no edit or terminal tools.
+func copilotTools(r role) string {
+	tools := []string{"read", "search", "rules-cascade/*"}
+	switch {
+	case r.ReadOnly:
+	case r.Name == "rcas-author": // proposes through MCP, runs rcas check
+		tools = append(tools, "execute")
+	default:
+		tools = append(tools, "edit", "execute")
+	}
+	return "tools: [" + quotedList(tools) + "]"
+}
+
+// agentCommand is one reusable prompt (templates/agents/commands): a slash command, a prompt file or a
+// workflow, depending on the tool.
+type agentCommand struct {
+	Name, Description, Hint  string
+	Arg, ArgHelp, ArgDefault string // the argument's name, what it is, and what nothing means
+	When                     string // when a tool should pick the command written as a skill
+	Body                     string // with {{args}} where the user's argument goes
+}
+
+// body is the prompt with the argument written the way the tool inserts it.
+func (c agentCommand) body(args string) string { return strings.ReplaceAll(c.Body, "{{args}}", args) }
+
+// withPlaceholder is the body for a tool that puts the user's text where a placeholder ($ARGUMENTS,
+// {{args}}, $prompt) is: the placeholder, and what to do when it is empty.
+func (c agentCommand) withPlaceholder(token string) string {
+	return c.body(token + " (when nothing is given: " + c.ArgDefault + ")")
+}
+
+// plain is the body for a tool that has no placeholder and passes what the user typed as context.
+func (c agentCommand) plain() string {
+	return c.body("what the user named with the request (" + c.ArgHelp + "; when nothing is given: " + c.ArgDefault + ")")
+}
+
+// skillName is the portable skill a command is also written as, for the tools without commands.
+func (c agentCommand) skillName() string {
+	return "rules-cascade-" + strings.TrimPrefix(c.Name, "rcas-")
+}
+
+func agentCommands(fill func(string) string) []agentCommand {
+	var out []agentCommand
+	for _, file := range assets.Commands() {
+		fields, body := frontmatter(fill(assets.Template("commands/" + file)))
+		arg, help, _ := strings.Cut(unquote(fields["argument"]), "|")
+		out = append(out, agentCommand{Name: fields["name"], Description: unquote(fields["description"]), Hint: unquote(fields["argument-hint"]),
+			Arg: arg, ArgHelp: help, ArgDefault: unquote(fields["argument-default"]), When: unquote(fields["skill-when"]), Body: body})
+	}
+	return out
+}
+
+func unquote(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(s[1 : len(s)-1])
+	}
+	return s
+}
+
+// splitFrontmatter returns a document's frontmatter, with its delimiters, and its body.
+func splitFrontmatter(doc string) (string, string) {
+	if strings.HasPrefix(doc, "---\n") {
+		if end := strings.Index(doc[4:], "\n---\n"); end >= 0 {
+			return doc[:4+end+5], strings.TrimLeft(doc[4+end+5:], "\n")
+		}
+	}
+	return "", doc
+}
+
 // rulesetGlobs are the files a scoped rule applies to.
 var rulesetGlobs = []string{"**/*.ruleset.yaml", "**/*.ruleset.yml", "**/*.ruleset.json", "rcas.yaml"}
 
@@ -308,6 +394,11 @@ func (c *cli) agentFiles(base string, tools, langs []string) *agentPlan {
 		}
 		fmt.Fprintf(&skillList, "- `%s`: %s\n", name, desc)
 	}
+	for _, cmd := range agentCommands(fill) {
+		if !contains(assets.Skills(), cmd.skillName()) {
+			fmt.Fprintf(&skillList, "- `%s`: %s.\n", cmd.skillName(), cmd.Description)
+		}
+	}
 	playbook := strings.Replace(fill(assets.Template("playbook.md")), "{{skills}}", strings.TrimRight(skillList.String(), "\n"), 1)
 	scoped := fill(assets.Template("scoped.md"))
 
@@ -324,12 +415,65 @@ func (c *cli) agentFiles(base string, tools, langs []string) *agentPlan {
 	add := func(path, content string) {
 		p.files = append(p.files, fileWrite{Path: path, Content: []byte(content)})
 	}
+	cmds := agentCommands(fill)
 	skills := func(dir string) {
 		for _, name := range p.skills {
 			fields, body := frontmatter(fill(assets.Skill(name)))
 			head := "---\nname: " + fields["name"] + "\ndescription: " + fields["description"] + "\n---\n\n"
 			add(dir+"/"+name+"/SKILL.md", withMarker(head, body))
 		}
+		// each command also as a skill, for the tools that run skills but have no commands
+		for _, cmd := range cmds {
+			if contains(p.skills, cmd.skillName()) || contains(assets.Skills(), cmd.skillName()) {
+				continue // rules-cascade-review already is one
+			}
+			head := "---\nname: " + cmd.skillName() + "\ndescription: " + yamlString(cmd.Description+". "+cmd.When) + "\n---\n\n"
+			add(dir+"/"+cmd.skillName()+"/SKILL.md", withMarker(head, cmd.plain()))
+		}
+	}
+	// commandFiles writes every command for one tool: path from the name, file from the command.
+	commandFiles := func(path func(name string) string, file func(cmd agentCommand) string) {
+		for _, cmd := range cmds {
+			add(path(cmd.Name), file(cmd))
+		}
+	}
+	// mdCommand is a Markdown command with frontmatter lines and the user's text at token ("" = no placeholder).
+	mdCommand := func(token string, fields ...func(cmd agentCommand) string) func(cmd agentCommand) string {
+		return func(cmd agentCommand) string {
+			body := cmd.plain()
+			if token != "" {
+				body = cmd.withPlaceholder(token)
+			}
+			var head []string
+			for _, f := range fields {
+				head = append(head, f(cmd))
+			}
+			return withMarker("---\n"+strings.Join(head, "\n")+"\n---\n\n", body)
+		}
+	}
+	description := func(cmd agentCommand) string { return "description: " + yamlString(cmd.Description) }
+	hint := func(cmd agentCommand) string { return "argument-hint: " + yamlString(cmd.Hint) }
+	tomlCommand := func(cmd agentCommand) string {
+		return "# rcas-managed: 'rcas agent install' refreshes this file. Delete this line to keep your own edits.\n" +
+			"description = " + tomlQuote(cmd.Description) + "\nprompt = '''\n" + strings.ReplaceAll(cmd.withPlaceholder("{{args}}"), "'''", `"""`) + "'''\n"
+	}
+	var code []string
+	for _, lang := range langs {
+		code = append(code, codeGlobs[lang]...)
+	}
+	codeBody := fill(assets.Template("code.md"))
+	// codeRule writes the instructions for application code, scoped to the code globs in the tool's format.
+	codeRule := func(path, head string) {
+		if len(code) > 0 {
+			add(path, withMarker(head, codeBody))
+		}
+	}
+	yamlList := func(key string, items []string) string {
+		out := key + ":"
+		for _, item := range items {
+			out += "\n  - " + yamlString(item)
+		}
+		return out
 	}
 	// markdownAgents writes the roles as Markdown sub-agents; fields builds each one's frontmatter.
 	markdownAgents := func(dir, suffix string, fields func(r role) []string) {
@@ -353,6 +497,9 @@ func (c *cli) agentFiles(base string, tools, langs []string) *agentPlan {
 			markdownAgents(".claude/agents", ".md", func(r role) []string {
 				return []string{"name: " + r.Name, "description: " + r.Description, "tools: " + r.ClaudeTools}
 			})
+			commandFiles(func(n string) string { return ".claude/commands/" + n + ".md" }, mdCommand("$ARGUMENTS", description, hint))
+			scopedRule(".claude/rules/rules-cascade.md", "---\n"+yamlList("paths", rulesetGlobs)+"\n---\n\n")
+			codeRule(".claude/rules/rules-cascade-code.md", "---\n"+yamlList("paths", code)+"\n---\n\n")
 		case "codex":
 			for _, r := range roles(fill) {
 				add(".codex/agents/"+r.Name+".toml", "# rcas-managed: 'rcas agent install' refreshes this file. Delete this line to keep your own edits.\n"+
@@ -367,12 +514,21 @@ func (c *cli) agentFiles(base string, tools, langs []string) *agentPlan {
 			}
 			scopedRule(".github/instructions/rules-cascade.instructions.md", "---\nname: Rule Cascade rulesets\napplyTo: "+
 				yamlString(strings.Join(rulesetGlobs, ","))+"\n---\n\n")
+			codeRule(".github/instructions/rules-cascade-code.instructions.md", "---\nname: Rule Cascade in application code\napplyTo: "+
+				yamlString(strings.Join(code, ","))+"\n---\n\n")
+			for _, cmd := range cmds {
+				add(".github/prompts/"+cmd.Name+".prompt.md", withMarker("---\nname: "+cmd.Name+"\ndescription: "+yamlString(cmd.Description)+
+					"\nargument-hint: "+yamlString(cmd.Hint)+"\nagent: agent\ntools: ["+quotedList([]string{"read", "search", "rules-cascade/*"})+"]\n---\n\n",
+					cmd.withPlaceholder("${input:"+cmd.Arg+":"+cmd.ArgHelp+"}")))
+			}
 			if !has("claude") { // Copilot also reads .claude/agents: one copy is enough
-				markdownAgents(".github/agents", ".agent.md", nameDesc)
+				markdownAgents(".github/agents", ".agent.md", func(r role) []string { return append(nameDesc(r), copilotTools(r)) })
 			}
 		case "cursor":
 			scopedRule(".cursor/rules/rules-cascade.mdc", "---\ndescription: Business rules are Rule Cascade rulesets; how to find, write, test and propose them with rcas\n"+
 				"globs: ["+quotedList(rulesetGlobs)+"]\nalwaysApply: false\n---\n\n")
+			codeRule(".cursor/rules/rules-cascade-code.mdc", "---\ndescription: Business rules in application code come from Rule Cascade rulesets, not new checks\n"+
+				"globs: ["+quotedList(code)+"]\nalwaysApply: false\n---\n\n")
 			if !has("claude") { // Cursor also reads .claude/agents
 				markdownAgents(".cursor/agents", ".md", func(r role) []string {
 					return append(nameDesc(r), fmt.Sprintf("readonly: %t", r.ReadOnly))
@@ -381,28 +537,82 @@ func (c *cli) agentFiles(base string, tools, langs []string) *agentPlan {
 		case "gemini":
 			// Gemini CLI does not read AGENTS.md unless configured to: it gets the playbook itself.
 			block("GEMINI.md", "GEMINI.md", playbook)
+			commandFiles(func(n string) string { return ".gemini/commands/" + n + ".toml" }, tomlCommand)
+			markdownAgents(".gemini/agents", ".md", func(r role) []string {
+				if r.ReadOnly { // MCP tools are mcp_<server>_<tool>
+					return append(nameDesc(r), "tools: ["+quotedList([]string{"read_file", "grep_search", "mcp_rules-cascade_*"})+"]")
+				}
+				return nameDesc(r)
+			})
 		case "kiro":
 			scopedRule(".kiro/steering/rules-cascade.md", "---\ninclusion: fileMatch\nfileMatchPattern: ["+quotedList(rulesetGlobs)+"]\n---\n\n")
+			codeRule(".kiro/steering/rules-cascade-code.md", "---\ninclusion: fileMatch\nfileMatchPattern: ["+quotedList(code)+"]\n---\n\n")
 			skills(".kiro/skills")
+			markdownAgents(".kiro/agents", ".md", func(r role) []string { // MCP tools are @<server>
+				tools := []string{"read"}
+				if r.Name == "rcas-author" {
+					tools = append(tools, "shell")
+				} else if !r.ReadOnly {
+					tools = append(tools, "write", "shell")
+				}
+				return append(nameDesc(r), "tools: ["+quotedList(append(tools, "@rules-cascade"))+"]")
+			})
 		case "devin":
 			scopedRule(".devin/rules/rules-cascade.md", "---\ntrigger: glob\nglobs: "+yamlString(strings.Join(rulesetGlobs, ","))+"\n---\n\n")
+			codeRule(".devin/rules/rules-cascade-code.md", "---\ntrigger: glob\nglobs: "+yamlString(strings.Join(code, ","))+"\n---\n\n")
+			commandFiles(func(n string) string { return ".devin/workflows/" + n + ".md" }, func(cmd agentCommand) string {
+				return withMarker("", "# "+cmd.Name+": "+cmd.Description+"\n\n"+cmd.plain())
+			})
 		case "junie":
-			markdownAgents(".junie/agents", ".md", nameDesc)
+			markdownAgents(".junie/agents", ".md", func(r role) []string { // tools are tool groups
+				tools := []string{"Read", "Glob", "Grep"}
+				if r.Name == "rcas-author" {
+					tools = append(tools, "Bash")
+				} else if !r.ReadOnly {
+					tools = append(tools, "Bash", "Write", "Edit")
+				}
+				return append(nameDesc(r), "tools: ["+quotedList(tools)+"]", "mcpServers: ["+quotedList([]string{"rules-cascade"})+"]")
+			})
+			commandFiles(func(n string) string { return ".junie/commands/" + n + ".md" }, mdCommand("$prompt", description,
+				func(agentCommand) string { return "allowPromptArgument: true" }))
 		case "cline":
 			scopedRule(".clinerules/rules-cascade.md", "---\npaths: ["+quotedList(rulesetGlobs)+"]\n---\n\n")
+			codeRule(".clinerules/rules-cascade-code.md", "---\npaths: ["+quotedList(code)+"]\n---\n\n")
 			if !has("claude") { // Cline also reads .claude/skills
 				skills(".cline/skills")
 			}
 		case "opencode":
 			markdownAgents(".opencode/agents", ".md", func(r role) []string {
-				return []string{"description: " + yamlString(r.Description), "mode: subagent"}
+				fields := []string{"description: " + yamlString(r.Description), "mode: subagent"}
+				switch {
+				case r.ReadOnly:
+					fields = append(fields, "permission:\n  edit: deny\n  bash: deny")
+				case r.Name == "rcas-author": // proposes through MCP instead of editing rulesets
+					fields = append(fields, "permission:\n  edit: deny")
+				}
+				return fields
 			})
+			commandFiles(func(n string) string { return ".opencode/commands/" + n + ".md" }, mdCommand("$ARGUMENTS", description))
 		case "factory":
-			markdownAgents(".factory/droids", ".md", nameDesc)
+			markdownAgents(".factory/droids", ".md", func(r role) []string {
+				if r.ReadOnly { // read-only tools, plus the rules-cascade MCP tools
+					return append(nameDesc(r), "tools: read-only", "mcpServers: ["+quotedList([]string{"rules-cascade"})+"]")
+				}
+				return nameDesc(r)
+			})
+			commandFiles(func(n string) string { return ".factory/commands/" + n + ".md" }, mdCommand("$ARGUMENTS", description, hint))
 		case "amazonq":
 			add(".amazonq/rules/rules-cascade.md", withMarker("", playbook))
 		case "tabnine":
 			add(".tabnine/guidelines/rules-cascade.md", withMarker("", playbook))
+			commandFiles(func(n string) string { return ".tabnine/agent/commands/" + n + ".toml" }, tomlCommand)
+		case "kilo":
+			commandFiles(func(n string) string { return ".kilo/commands/" + n + ".md" }, mdCommand("", description))
+		case "augment":
+			if !has("claude") { // Auggie also reads .claude/commands
+				commandFiles(func(n string) string { return ".augment/commands/" + n + ".md" }, mdCommand("", description, hint))
+			}
+			markdownAgents(".augment/agents", ".md", nameDesc)
 		}
 	}
 	legacy := legacyOutputs(fill)

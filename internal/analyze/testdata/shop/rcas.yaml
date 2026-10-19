@@ -1,0 +1,5 @@
+rcas: 1
+rules: { dir: rules }
+analyze:
+  features:
+    checkout: ["**/checkout/**", "**/order/**"]

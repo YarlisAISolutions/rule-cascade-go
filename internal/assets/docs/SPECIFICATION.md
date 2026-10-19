@@ -1,6 +1,6 @@
 # Rule Cascade 1.0 Specification
 
-Status: draft (`1.0.0-alpha.8`). The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
+Status: draft (`1.0.0-alpha.9`). The words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119.
 
 This document defines the behaviour every runtime must reproduce, in every programming language and
 on every operating system. The structure of a ruleset document is defined by
@@ -600,7 +600,7 @@ manifest, and otherwise to the channel it has.
 | `BAD_REQUEST` | Not JSON, not an object, an unknown command, or a missing or mistyped member |
 | `UNKNOWN_RULESET` | `ruleset` names an id that was not loaded |
 | `CHANNEL_UNAVAILABLE` | The ruleset was read from one manifest and the request asks for the other channel |
-| `LOAD_FAILED` | The bundle or document was rejected; `problems` lists `{code, message, rule?}` |
+| `LOAD_FAILED` | The bundle or document was rejected; `problems` lists `{code, message, rule?}`. Also the engine's own configuration is not valid; `problems` is then empty |
 | `EVALUATION_ERROR` | `expression` only: the expression raised an evaluation error |
 | `UNSUPPORTED` | The engine does not implement the command (for example `compile` on an evaluator) |
 
@@ -611,6 +611,12 @@ that is not a string; a `bundle`, `manifest`, `document`, `registry`, `schemaDoc
 does not have the shape of section 8. Optional members may be `null`: a `null` channel is the default
 channel. A line that is not JSON includes one with `NaN`,
 `Infinity` or a number too large for a double.
+
+An engine's configuration is not part of a request. While a setting of the engine is not valid (for
+example a cache size in an environment variable, see `docs/environment-variables.md`), every command
+but `version` answers `LOAD_FAILED` with an empty `problems` list, after the request's members are
+checked and before a ruleset is looked up, a bundle is read or an expression is evaluated. The
+message names the setting and never repeats its value, which may be a secret put in the wrong place.
 
 Entity schemas referenced by `compile` are resolved through `schemaDocuments`, keyed by the file
 part of the entity's `$ref`; when it is absent the path checks are skipped (section 5).

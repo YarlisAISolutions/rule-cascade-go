@@ -66,8 +66,9 @@ https://rulescascade.com/examples/batch/.
 
 ## Replacing existing validation
 
-`rcas analyze` lists Pydantic validators, marshmallow schemas, Django `clean()` methods and
-hand-written checks. Keep type and shape validation (Pydantic models) where it is; move business
+`rcas analyze --module <module>` lists Pydantic `Field(le=...)` and validators, marshmallow
+schemas, Django validators, `clean()` methods and permissions, hand-written `raise` checks, named
+limits (`MAX_QTY = 10`), comparisons with numbers and `match` branches. A candidate with `drift` means another language of the project (often the front end) decides the same name with another value: one ruleset must decide it for both. Keep type and shape validation (Pydantic models) where it is; move business
 decisions to rules. Add a parity test that runs the old check and the engine on the same inputs and
 delete the old check only when they agree.
 

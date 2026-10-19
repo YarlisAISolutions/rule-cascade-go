@@ -74,7 +74,10 @@ The browser gives early feedback; **the server evaluates again on submit and dec
 
 ## Replacing existing validation
 
-`rcas analyze` lists Zod, Joi, Yup, class-validator and hand-written checks. For each: write or
+`rcas analyze` lists Zod, Joi, Yup, class-validator, react-hook-form `register` options, conditions
+in components (`{total > 10000 && <Approval/>}`, `disabled={age < 21}`), named limits and hand-written
+checks. A candidate with `drift` means the backend decides the same name with another value: the
+form must evaluate the client manifest of the ruleset the server uses, not keep its own copy. For each: write or
 derive the rule, add a parity test that runs the old check and the engine on the same inputs, and
 delete the old check only when they agree. Keep transport validation (JSON shape, types) where it
 is; move business decisions to rules.

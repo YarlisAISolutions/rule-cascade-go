@@ -51,7 +51,9 @@ cron schedule and keeps the last good rules.
 
 ## Replacing existing validation
 
-`rcas analyze` lists `validate:` struct tags (go-playground/validator) and hand-written checks. Keep
+`rcas analyze --module <module>` lists `validate:` and `binding:` struct tags, ozzo-validation, rule
+engines, hand-written `errors.New` checks, named limits (`const MaxQuantity = 10`), comparisons with
+numbers and `switch` branches. A candidate with `drift` means another language of the project (often the front end) decides the same name with another value: one ruleset must decide it for both. Keep
 shape checks in decoding; move business decisions to rules. Add a table-driven parity test over the
 same inputs for the old check and the engine, then delete the old check.
 

@@ -19,10 +19,13 @@ every language evaluates identically. Rules are not re-implemented in applicatio
 1. **Never edit rulesets directly when acting as an agent.** Draft them, check them, and submit them
    with the MCP tool `propose_ruleset` (or `rcas derive --propose`). A person reviews with
    `rcas proposals show <id>` and accepts with `rcas proposals accept <id>`.
-2. **Find the decisions in the code first.** Run the MCP tool `analyze` (or `rcas analyze`): it lists
-   the API schemas and the validation code (Zod, Joi, class-validator, Pydantic, Bean Validation, Go
-   `validate:` tags, FluentValidation, Rails `validates`, hand-written `if ... throw`). Each hit is a
-   candidate rule; read the surrounding code to learn what it really decides and why.
+2. **Find the decisions in the code first.** Run the MCP tool `analyze` (or `rcas analyze`) on the
+   project, a path, a `module` or a `feature`: it lists the API schemas and the decisions in code
+   (validation libraries, hand-written `if ... throw`, named limits, comparisons with numbers, status
+   branches, user-interface conditions), each with its module and a confidence. Each hit is a candidate rule;
+   read the surrounding code to learn what it really decides and why. `candidates` are names decided
+   in several languages (a backend and a user interface): `drift` means they disagree, so ask
+   which value is right. `coveredBy` names a ruleset that already uses the name.
 3. **Start from the schemas.** For an OpenAPI or JSON Schema, `derive` produces the baseline rules
    (required, enum, length, pattern, range) deterministically. Write by hand only what a schema
    cannot say: rules across fields, rules on state transitions, limits that depend on parameters,

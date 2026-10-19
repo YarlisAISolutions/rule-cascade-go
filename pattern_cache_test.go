@@ -164,6 +164,44 @@ func TestPatternCacheRefusesBadEnvironment(t *testing.T) {
 	}
 }
 
+// An engine with a refused setting answers LOAD_FAILED with no problems to every command but
+// version, after the members are checked (specification section 13), and never repeats the value.
+func TestEngineRefusesBadSettings(t *testing.T) {
+	withPatternCache(t, map[string]string{"RULE_CASCADE_PATTERN_CACHE_SIZE": "s3cr3t-t0ken"})
+	bundle, err := os.ReadFile("../../conformance/bundles/acme.payments.transfer.bundle.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := NewEngine(nil)
+	answer := func(line string) (code string, problems []any, message string) {
+		response, err := ParseJSON(engine.HandleLine([]byte(line)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		failure := asObj(response).obj("error")
+		problems, _ = failure.get("problems").([]any)
+		return failure.str("code"), problems, failure.str("message")
+	}
+	if code, _, _ := answer(`{"command":"version"}`); code != "" {
+		t.Fatalf("version: %s", code)
+	}
+	for _, line := range []string{`{"command":"explode"}`, `{"command":"load"}`, `{"command":"expression"}`,
+		`{"command":"evaluate","ruleset":"x","request":{"entity":5,"operation":"create"}}`} {
+		if code, _, _ := answer(line); code != "BAD_REQUEST" {
+			t.Errorf("%s: %s, want BAD_REQUEST", line, code)
+		}
+	}
+	for _, line := range []string{`{"command":"load","bundle":` + string(bundle) + `}`, `{"command":"expression","expr":1}`,
+		`{"command":"manifest","ruleset":"x"}`, `{"command":"evaluate","ruleset":"x","request":{"entity":"T","operation":"create"}}`,
+		`{"command":"compile","document":{}}`} {
+		code, problems, message := answer(line)
+		if code != "LOAD_FAILED" || problems == nil || len(problems) != 0 ||
+			!strings.Contains(message, "RULE_CASCADE_PATTERN_CACHE_SIZE") || strings.Contains(message, "s3cr3t") {
+			t.Errorf("%.40s: %s %v %q, want LOAD_FAILED, no problems, the variable named and not its value", line, code, problems, message)
+		}
+	}
+}
+
 // Changing the size while other goroutines evaluate is safe (run with -race).
 func TestPatternCacheResizeWhileEvaluating(t *testing.T) {
 	withPatternCache(t, nil)

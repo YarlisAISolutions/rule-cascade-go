@@ -50,14 +50,6 @@ func runDerive(path string, o deriveOptions) (*derive.Result, error) {
 
 var openapiRe = regexp.MustCompile(`(?m)^\s*"?(openapi|swagger)"?\s*:`)
 
-func statDir(path string) (bool, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false, err
-	}
-	return info.IsDir(), nil
-}
-
 // readHead returns the first 64 KiB of a file, for a cheap look at its shape.
 func readHead(path string) string {
 	f, err := os.Open(path)

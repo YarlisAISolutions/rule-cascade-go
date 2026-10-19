@@ -1,0 +1,7 @@
+ruleCascade: 1.0.0
+kind: RuleSet
+metadata: { id: shop.orders, version: 1.0.0, title: Orders }
+scope: [{ level: organization, id: shop }, { level: module, id: orders }]
+params:
+  maxDiscountPercent: { type: integer, default: 30 }
+rules: []

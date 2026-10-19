@@ -47,7 +47,7 @@ func init() {
 		{"engine", "[--conformance-operators]", "serve the JSON Lines engine protocol on standard input and output", "", core("engine")},
 		{"derive", "<openapi.yaml|schema.json> --id <ruleset.id> [--schema <Name> | --pointer </$defs/X>] [--entity <Name>]\n          [--scope level:id]... [--version <v>] [--title <t>] [--tests <file>] [--codes-from <file>] [-o <file>] [--check] [--propose]",
 			"derive a baseline validation ruleset from an OpenAPI component schema or a JSON Schema", deriveHelp, (*cli).deriveCommand},
-		{"analyze", "[path] [--format md|json] [-o <file>] [--derive] [--include <glob>]... [--exclude <glob>]... [--max-files <n>]",
+		{"analyze", "[path ...] [--module <m>]... [--feature <f>]... [--include <glob>]... [--exclude <glob>]... [--changed <ref>]\n          [--baseline <file>] [--write-baseline <file>] [--min-confidence <0..1>] [--max-files <n>] [--max-hits <n>]\n          [--format md|json|sarif] [-o <file>] [--derive]",
 			"inventory the API schemas and validation code of an existing project", analyzeHelp, (*cli).analyzeCommand},
 		{"mcp", "[--root <dir>] [--read-only] [--hosted] [--list-tools] [--http <addr> [--allow-origin <origins>] [--no-sse]]\n          | install <client>... [--scope project|user] [--print] [--file] [--command npx|binary] [--url <url>] [--force]",
 			"serve the Model Context Protocol (standard input and output, or HTTP), or register it with an AI coding tool", mcpHelp, (*cli).mcpCommand},

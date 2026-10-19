@@ -36,6 +36,16 @@ func loadFailed(err error) *protocolError {
 	return badRequest("%v", err)
 }
 
+// settingsFailure reports an engine setting that is not valid (specification section 13): every
+// command but version answers LOAD_FAILED with no problems, after its members are checked and
+// before anything is looked up, read or evaluated. The message names the setting, never its value.
+func settingsFailure() *protocolError {
+	if err := patternCacheProblem(); err != nil {
+		return &protocolError{"LOAD_FAILED", err.Error(), []Problem{}}
+	}
+	return nil
+}
+
 func (p *protocolError) value() *Object {
 	o := NewObject()
 	o.Set("code", p.code)
@@ -214,6 +224,9 @@ func (e *Engine) dispatch(request *Object) (any, *protocolError) {
 		if failure != nil {
 			return nil, failure
 		}
+		if failure := settingsFailure(); failure != nil {
+			return nil, failure
+		}
 		registry := map[string]any{}
 		given.each(func(id string, doc any) { registry[id] = doc })
 		if id, ok := document.obj("metadata").get("id").(string); ok {
@@ -239,6 +252,9 @@ func (e *Engine) dispatch(request *Object) (any, *protocolError) {
 		if request.obj(need) == nil {
 			return nil, badRequest("'%s' is missing or has the wrong type", need)
 		}
+		if failure := settingsFailure(); failure != nil {
+			return nil, failure
+		}
 		rs, failure := e.ruleset(request)
 		if failure != nil {
 			return nil, failure
@@ -261,6 +277,9 @@ func (e *Engine) dispatch(request *Object) (any, *protocolError) {
 			if why := requestProblem(request.get("request")); why != "" {
 				return nil, badRequest("'request': %s", why)
 			}
+		}
+		if failure := settingsFailure(); failure != nil {
+			return nil, failure
 		}
 		rs, failure := e.ruleset(request)
 		if failure != nil {
@@ -296,6 +315,9 @@ func (e *Engine) dispatch(request *Object) (any, *protocolError) {
 			if tooDeep(env.get(root), maxValueDepth) {
 				return nil, badRequest("'env.%s' is nested more than %d deep", root, maxValueDepth)
 			}
+		}
+		if failure := settingsFailure(); failure != nil {
+			return nil, failure
 		}
 		result, err := evaluateExpression(expr, env, functions, e.operators)
 		if err != nil {

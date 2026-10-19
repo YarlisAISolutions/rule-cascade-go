@@ -317,6 +317,8 @@ sources:
   jsonSchema: []        # - { path: schemas/order.schema.json, entity: Order }
 analyze:
   exclude: ["**/test/**", "**/tests/**", "**/*.test.*", "**/*_test.go"]
+  features: {}          # checkout: ["web/src/features/checkout/**"], for 'rcas analyze --feature checkout'
+  baseline: .rcas/analyze-baseline.json   # written by 'rcas analyze --write-baseline'
 proposals:
   dir: .rcas/proposals
 `, yamlScalar(name), yamlScalar(prefix), l, prefix)

@@ -39,7 +39,11 @@ writing one from scratch.
 
 ## Replacing existing validation
 
-`rcas analyze` lists FluentValidation, Rails `validates`, Laravel rules and hand-written checks.
+`rcas analyze --module <module>` reads C# and Razor (data annotations, FluentValidation,
+`[Authorize]`, Blazor conditions), Ruby (Rails `validates`, `errors.add`, Pundit/CanCanCan), PHP
+(Laravel rules and gates), Rust (`validator`, `Err(...)`), Swift and SwiftUI, Dart and Flutter, Kotlin
+(`require`, Compose), C and C++ (`#define` limits, `throw std::invalid_argument`), plus named limits,
+comparisons with numbers and status branches in all of them. A candidate with `drift` means another language of the project (often the front end) decides the same name with another value: one ruleset must decide it for both.
 Move business decisions to rules, add a parity test over the same inputs, then delete the old check.
 
 ## Tests

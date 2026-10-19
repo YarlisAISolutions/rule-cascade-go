@@ -25,7 +25,7 @@ func (c *cli) completionCommand(args []string) int {
 		"compile":   "--all -o --output",
 		"check":     "--json", "test": "--json",
 		"derive":     "--schema --pointer --id --entity --scope --version --title --tests --codes-from -o --check --propose",
-		"analyze":    "--format --include --exclude --max-files --derive -o",
+		"analyze":    "--format --module --feature --include --exclude --changed --baseline --write-baseline --min-confidence --max-files --max-hits --derive -o",
 		"evaluate":   "--bundle --manifest --channel --conformance-operators",
 		"manifest":   "--bundle --manifest --channel -o",
 		"completion": "bash zsh fish powershell",

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -441,6 +442,141 @@ func TestAnalyzeFindsSchemasAndChecks(t *testing.T) {
 	}
 }
 
+// copyTree copies a test fixture into a temporary directory.
+func copyTree(t *testing.T, from string) string {
+	t.Helper()
+	dir := t.TempDir()
+	err := filepath.Walk(from, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(from, path)
+		if info.IsDir() {
+			return os.MkdirAll(filepath.Join(dir, rel), 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(dir, rel), data, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestAnalyzeModulesFeaturesBaselineSARIF(t *testing.T) {
+	dir := copyTree(t, filepath.Join("..", "analyze", "testdata", "shop"))
+	report := func(args ...string) map[string]any {
+		t.Helper()
+		status, out, errs := in(t, dir, "", append([]string{"analyze", "--format", "json"}, args...)...)
+		if status != 0 {
+			t.Fatalf("analyze %v: %d %s", args, status, errs)
+		}
+		var r map[string]any
+		if err := json.Unmarshal([]byte(out), &r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	files := func(r map[string]any) map[string]bool {
+		out := map[string]bool{}
+		for _, h := range r["hits"].([]any) {
+			out[h.(map[string]any)["file"].(string)] = true
+		}
+		return out
+	}
+	all := report()
+	if len(all["candidates"].([]any)) == 0 || len(all["modules"].([]any)) != 2 {
+		t.Fatalf("no candidates or modules: %v", all)
+	}
+	for f := range files(report("--module", "web")) {
+		if !strings.HasPrefix(f, "web/") {
+			t.Errorf("--module web scanned %s", f)
+		}
+	}
+	for f := range files(report("--feature", "checkout")) {
+		if !strings.Contains(f, "/checkout/") && !strings.Contains(f, "/order/") {
+			t.Errorf("--feature checkout scanned %s", f)
+		}
+	}
+	for f := range files(report("web", "order-service/src/main/java/com/shop/order/OrderService.java")) {
+		if !strings.HasPrefix(f, "web/") && f != "order-service/src/main/java/com/shop/order/OrderService.java" {
+			t.Errorf("two paths scanned %s", f)
+		}
+	}
+	if status, _, errs := in(t, dir, "", "analyze", "--module", "nope"); status != exitUsage || !strings.Contains(errs, "order-service") {
+		t.Errorf("an unknown module lists the known ones: %d %s", status, errs)
+	}
+	if status, _, errs := in(t, dir, "", "analyze", "--feature", "nope"); status != exitUsage || !strings.Contains(errs, "checkout") {
+		t.Errorf("an unknown feature lists the known ones: %d %s", status, errs)
+	}
+	if status, _, _ := in(t, dir, "", "analyze", "--min-confidence", "2"); status != exitUsage {
+		t.Error("--min-confidence is between 0 and 1")
+	}
+
+	if status, _, errs := in(t, dir, "", "analyze", "--write-baseline", ".rcas/analyze-baseline.json"); status != 0 || !strings.Contains(errs, "baseline:") {
+		t.Fatalf("write baseline: %d %s", status, errs)
+	}
+	os.WriteFile(filepath.Join(dir, "web/src/features/checkout/limits.ts"), []byte("export const MAX_ITEMS = 50;\n"), 0o644)
+	after := report("--baseline", ".rcas/analyze-baseline.json")
+	if got := files(after); len(got) != 1 || !got["web/src/features/checkout/limits.ts"] {
+		t.Errorf("with the baseline only the new file shows: %v", got)
+	}
+
+	status, out, _ := in(t, dir, "", "analyze", "--format", "sarif")
+	var sarif struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Results []struct {
+				RuleID string `json:"ruleId"`
+				Level  string `json:"level"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if status != 0 || json.Unmarshal([]byte(out), &sarif) != nil || sarif.Version != "2.1.0" || len(sarif.Runs) != 1 {
+		t.Fatalf("sarif: %d %s", status, out)
+	}
+	warnings := 0
+	for _, r := range sarif.Runs[0].Results {
+		if r.RuleID == "rcas.analyze/drift" && r.Level == "warning" {
+			warnings++
+		}
+	}
+	if warnings == 0 {
+		t.Error("sarif has no drift warnings")
+	}
+}
+
+func TestAnalyzeChanged(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	dir := copyTree(t, filepath.Join("..", "analyze", "testdata", "shop"))
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	git("init", "-q", "-b", "main")
+	git("add", ".")
+	git("commit", "-q", "-m", "start")
+	os.WriteFile(filepath.Join(dir, "web/src/features/checkout/limits.ts"), []byte("export const MAX_ITEMS = 50;\n"), 0o644)
+	status, out, errs := in(t, dir, "", "analyze", "--changed", "main", "--format", "json")
+	if status != 0 {
+		t.Fatalf("%d %s", status, errs)
+	}
+	if !strings.Contains(out, "limits.ts") || strings.Contains(out, "OrderService.java") {
+		t.Errorf("--changed main scans the new file only:\n%s", out)
+	}
+	if status, _, errs := in(t, dir, "", "analyze", "--changed", "no-such-ref"); status != exitUsage || !strings.Contains(errs, "no-such-ref") {
+		t.Errorf("an unknown ref fails: %d %s", status, errs)
+	}
+}
+
 func TestProgramNameAndHelp(t *testing.T) {
 	t.Setenv("RCAS_PROGRAM_NAME", "")
 	for argv0, want := range map[string]string{"rcas": "rcas", "/usr/bin/rule-cascade": "rule-cascade", `C:\x\RULE-CASCADE.EXE`: "rule-cascade", "rcas-linux-amd64": "rcas", "rule-cascade-darwin-arm64": "rule-cascade"} {
@@ -501,6 +637,34 @@ func TestInitQuotesYAMLKeywords(t *testing.T) {
 		if status, out, errs := in(t, dir, "", "check"); status != 0 {
 			t.Errorf("%s: check %d %s %s", name, status, out, errs)
 		}
+	}
+}
+
+func TestAgentInstallCopilotPromptsToolsAndCode(t *testing.T) {
+	dir := t.TempDir()
+	if status, out, errs := in(t, dir, "", "agent", "install", "--for", "copilot", "--stack", "java,ts"); status != 0 {
+		t.Fatalf("%d %s %s", status, out, errs)
+	}
+	code := readFile(t, filepath.Join(dir, ".github", "instructions", "rules-cascade-code.instructions.md"))
+	if !strings.Contains(code, `applyTo: "**/*.java,**/*.kt,**/*.kts,**/*.scala,**/*.ts,**/*.tsx,**/*.js,**/*.jsx,**/*.vue,**/*.svelte,**/*.component.html"`) || !strings.Contains(code, managedLine) {
+		t.Errorf("code instructions:\n%s", code)
+	}
+	for _, name := range []string{"rcas-capture", "rcas-review"} {
+		prompt := readFile(t, filepath.Join(dir, ".github", "prompts", name+".prompt.md"))
+		if !strings.HasPrefix(prompt, "---\nname: "+name+"\n") || !strings.Contains(prompt, `"rules-cascade/*"`) || !strings.Contains(prompt, managedLine) {
+			t.Errorf("%s:\n%s", name, prompt)
+		}
+	}
+	analyst := readFile(t, filepath.Join(dir, ".github", "agents", "rcas-analyst.agent.md"))
+	tester := readFile(t, filepath.Join(dir, ".github", "agents", "rcas-tester.agent.md"))
+	if !strings.Contains(analyst, `tools: ["read", "search", "rules-cascade/*"]`) || !strings.Contains(tester, `"edit"`) {
+		t.Errorf("agent tools:\n%s\n%s", analyst, tester)
+	}
+
+	other := t.TempDir()
+	in(t, other, "", "agent", "install", "--for", "copilot", "--stack", "other")
+	if code := readFile(t, filepath.Join(other, ".github", "instructions", "rules-cascade-code.instructions.md")); !strings.Contains(code, "**/*.cs") || !strings.Contains(code, "**/*.rs") {
+		t.Errorf("the engine languages get code instructions too:\n%s", code)
 	}
 }
 
