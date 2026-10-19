@@ -295,7 +295,7 @@ dist/rcas version
 ```
 
 ```text
-rcas 1.0.0-alpha.9 (specification 1.0.0, bundle format 1.0.0)
+rcas 1.0.0-alpha.10 (specification 1.0.0, bundle format 1.0.0)
 ```
 
 | Command | Does |
@@ -413,7 +413,7 @@ printf '%s\n' '{"id":1,"command":"version"}' '{"id":2,"command":"expression","ex
 ```
 
 ```text
-{"id":1,"ok":true,"result":{"engine":"rule-cascade-go","engineVersion":"1.0.0-alpha.9","ruleCascade":"1.0.0","bundle":"1.0.0","levels":["evaluator","compiler"],"operators":[]}}
+{"id":1,"ok":true,"result":{"engine":"rule-cascade-go","engineVersion":"1.0.0-alpha.10","ruleCascade":"1.0.0","bundle":"1.0.0","levels":["evaluator","compiler"],"operators":[]}}
 {"id":2,"ok":true,"result":0.3}
 ```
 
